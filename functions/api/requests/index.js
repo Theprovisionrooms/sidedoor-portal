@@ -1,5 +1,6 @@
 import { json, readBody, requireUser, text, uid, now, HttpError } from '../../../lib/http.js';
 import { listRequests, loadRequest, shape } from '../../../lib/requests.js';
+import { notifyLater } from '../../../lib/notify.js';
 
 export async function onRequestGet(ctx) {
   const user = requireUser(ctx);
@@ -43,5 +44,13 @@ export async function onRequestPost(ctx) {
       .bind(uid(), id, user.id, 'Request sent', t)
   ]);
 
-  return json({ request: shape(await loadRequest(env, user, id)) }, 201);
+  const r = shape(await loadRequest(env, user, id));
+  if (user.role === 'admin') {
+    notifyLater(ctx, { clientId }, { title: 'Jordan logged a request for you', body: title, url: `/#/requests/${id}` });
+  } else {
+    notifyLater(ctx, { admins: true }, {
+      title: `${b.urgent ? 'URGENT: ' : ''}New request from ${r.business_name}`, body: title, url: `/#/requests/${id}`, urgent: !!b.urgent
+    });
+  }
+  return json({ request: r }, 201);
 }

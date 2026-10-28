@@ -62,8 +62,34 @@ npx.cmd wrangler pages dev
 - Writes from other origins are refused. Clients can only ever see their own data.
 - Strict CSP and security headers in `public/_headers`.
 
+## Stage 2: billing and phone notifications
+
+### One-time setup
+1. Apply the new migration: `npx.cmd wrangler d1 migrations apply sidedoor-portal --remote`
+2. Make notification keys: `node scripts/vapid-keys.mjs`. Add both lines as secrets in the Pages project (Settings > Variables and secrets): `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`. Optional: `VAPID_SUBJECT` = `mailto:digitalsidedoor@gmail.com`.
+3. Pick a long random string and add it as secret `CRON_SECRET` on the Pages project.
+4. Deploy the daily tick worker once (it lives in `cron-worker/`, separate from the Pages project):
+   ```
+   npx.cmd wrangler deploy --config cron-worker/wrangler.toml
+   npx.cmd wrangler secret put CRON_SECRET --config cron-worker/wrangler.toml
+   ```
+   Use the same string as step 3. It runs at 08:07 UTC every day.
+5. In the app: Money > Settings, add your Revolut link. If it can take an amount, put `{amount}` where it goes, e.g. `https://revolut.me/yourname/{amount}`.
+6. Monthly plans and when they start are set per client (Details), or pre-filled on the Import screen. A client mid-build gets a later start month so they aren't billed before launch.
+
+### How the month works
+- On the 1st, each client gets one draft bill: their monthly plan plus any changes finished the month before.
+- You get a ping: "5 bills ready to send". Open Money, check them, tap Send all. (Or tick "Send automatically" to skip your check.)
+- Clients get a ping, open the bill and tap Pay with Revolut. The bill reference (SDD-0004 etc.) is shown for them to use.
+- They tap "I've already paid". You get a ping, check Revolut, tap Confirm. They get a thank-you ping.
+- 3 days past due, the client gets one gentle reminder a week until it's sorted.
+- Build deposits, balances and anything else: Money > One-off bill.
+- Cancelling a bill releases any change work on it, so it lands on the next one.
+
+### Notifications
+Clients and you switch them on from the Home nudge or Account. On iPhone they only work once the app is added to the home screen and opened from there (iOS 16.4 or later). Account has a Test button.
+
 ## Coming next
 
-- Stage 2: billing. Build fee and monthlies, Revolut link sent on the 1st, phone notifications.
 - Stage 3: analytics from Search Console per site.
 - Stage 4: automated security checks (SSL, uptime, headers, domain expiry) and seasonal recommendations per client.

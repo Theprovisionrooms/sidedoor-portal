@@ -4,6 +4,7 @@
 // A quote of 0 minutes means "on the house" and skips straight to approved.
 import { json, readBody, requireUser, text, uid, now, HttpError, chargePence } from '../../../../lib/http.js';
 import { loadRequest, shape } from '../../../../lib/requests.js';
+import { notifyLater } from '../../../../lib/notify.js';
 
 const fmtTime = (m) => (m < 60 ? `${m} mins` : `${+(m / 60).toFixed(2)} hr`);
 const fmtMoney = (p) => `£${(p / 100).toFixed(2)}`;
@@ -96,6 +97,16 @@ export async function onRequestPost(ctx) {
       .bind(uid(), r.id, user.id, note, t));
   }
   await env.DB.batch(stmts);
+
+  const url = `/#/requests/${r.id}`;
+  const toClient = (title, body) => notifyLater(ctx, { clientId: r.client_id }, { title, body, url });
+  const toJordan = (title, body) => notifyLater(ctx, { admins: true }, { title, body, url });
+  if (b.action === 'quote') toClient(update.status === 'approved' ? 'On the house' : 'Your quote is ready', `${r.title}: ${event}`);
+  else if (b.action === 'start') toClient('Work has started', r.title);
+  else if (b.action === 'complete') toClient('Done and live', `${r.title}. ${event}`);
+  else if (b.action === 'approve') toJordan(`${r.business_name} approved`, r.title);
+  else if (b.action === 'decline') toJordan(`${r.business_name} declined`, r.title);
+  else if (b.action === 'cancel') (isAdmin ? toClient : toJordan)('Request cancelled', r.title);
 
   return json({ request: shape(await loadRequest(env, user, r.id)) });
 }

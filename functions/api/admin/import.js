@@ -1,6 +1,7 @@
 // Bulk onboarding: create many clients in one all-or-nothing batch.
 import { json, readBody, requireAdmin, HttpError } from '../../../lib/http.js';
 import { parseClient, clientInserts, emailsTaken } from '../../../lib/clients.js';
+import { nextNumber } from '../../../lib/billing.js';
 
 export async function onRequestPost(ctx) {
   requireAdmin(ctx);
@@ -17,10 +18,11 @@ export async function onRequestPost(ctx) {
   const taken = await emailsTaken(env, emails);
   if (taken.length) throw new HttpError(409, `Already has a login: ${taken.join(', ')}`);
 
+  const numbering = { next: await nextNumber(env) };
   const all = [];
   const logins = [];
   for (const c of parsed) {
-    const r = await clientInserts(env, c);
+    const r = await clientInserts(env, c, numbering);
     all.push(...r.stmts);
     logins.push(...r.logins);
   }

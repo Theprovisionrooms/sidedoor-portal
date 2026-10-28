@@ -1,12 +1,16 @@
 import { json, readBody, requireAdmin, text, HttpError } from '../../../../../lib/http.js';
 import { clientDetail } from '../../../../../lib/clients.js';
 import { listRequests } from '../../../../../lib/requests.js';
+import { listInvoices } from '../../../../../lib/billing.js';
 
 export async function onRequestGet(ctx) {
   const user = requireAdmin(ctx);
   const detail = await clientDetail(ctx.env, ctx.params.id);
-  const requests = await listRequests(ctx.env, user, { clientId: ctx.params.id });
-  return json({ ...detail, requests });
+  const [requests, invoices] = await Promise.all([
+    listRequests(ctx.env, user, { clientId: ctx.params.id }),
+    listInvoices(ctx.env, { clientId: ctx.params.id })
+  ]);
+  return json({ ...detail, requests, invoices });
 }
 
 export async function onRequestPatch(ctx) {
@@ -24,6 +28,21 @@ export async function onRequestPatch(ctx) {
     const rate = Math.round(Number(b.hourly_rate_pence));
     if (!Number.isFinite(rate) || rate < 0) throw new HttpError(400, 'Hourly rate needs to be a number');
     fields.hourly_rate_pence = rate;
+  }
+  if ('monthly_fee_pence' in b) {
+    const fee = Math.round(Number(b.monthly_fee_pence));
+    if (!Number.isFinite(fee) || fee < 0) throw new HttpError(400, 'Monthly fee needs to be a number');
+    fields.monthly_fee_pence = fee;
+  }
+  if ('pay_link' in b) {
+    const link = String(b.pay_link || '').trim();
+    if (link && !/^https:\/\/\S+$/.test(link)) throw new HttpError(400, 'Pay link needs to start with https://');
+    fields.pay_link = link || null;
+  }
+  if ('monthly_from' in b) {
+    const from = String(b.monthly_from || '').trim();
+    if (from && !/^\d{4}-(0[1-9]|1[0-2])$/.test(from)) throw new HttpError(400, 'Plan start should be a month like 2026-12');
+    fields.monthly_from = from || null;
   }
   if ('archived' in b) fields.archived = b.archived ? 1 : 0;
 

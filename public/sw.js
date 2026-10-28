@@ -1,6 +1,6 @@
 // Sidedoor Portal service worker. Network first so new deploys show straight away;
 // the cached shell only steps in when there's no signal.
-const CACHE = 'sidedoor-shell-v1';
+const CACHE = 'sidedoor-shell-v2';
 const SHELL = ['/', '/index.html', '/app.js', '/styles.css', '/manifest.webmanifest', '/icons/icon.svg'];
 
 self.addEventListener('install', (e) => {
@@ -23,4 +23,29 @@ self.addEventListener('fetch', (e) => {
       })
       .catch(() => caches.match(e.request).then((r) => r || caches.match('/index.html')))
   );
+});
+
+// Phone notifications
+self.addEventListener('push', (e) => {
+  let m = {};
+  try { m = e.data ? e.data.json() : {}; } catch { m = { body: e.data && e.data.text() }; }
+  e.waitUntil(self.registration.showNotification(m.title || 'Sidedoor', {
+    body: m.body || '',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    data: { url: m.url || '/#/' },
+    tag: m.url || undefined,
+    renotify: !!m.url
+  }));
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const target = new URL(e.notification.data?.url || '/#/', self.location.origin).href;
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
+    for (const w of wins) {
+      if (new URL(w.url).origin === self.location.origin) { w.focus(); return w.navigate(target); }
+    }
+    return self.clients.openWindow(target);
+  }));
 });

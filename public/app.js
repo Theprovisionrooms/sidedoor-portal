@@ -84,6 +84,8 @@ const I = {
   me: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>',
   clients: '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c1-3.5 3.6-5.5 6.5-5.5s5.5 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c1.8.8 3 2.6 3.5 5.2"/></svg>',
   today: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+  money: '<svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="13" rx="2.5"/><path d="M2.5 10.5h19M6.5 15h4"/></svg>',
+  bell: '<svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>',
   inbox: '<svg viewBox="0 0 24 24"><path d="M4 13l2-8h12l2 8v6H4z"/><path d="M4 13h5l1 2h4l1-2h5"/></svg>',
   door: '<svg viewBox="0 0 32 40" class="door"><path d="M5 38V9a11 11 0 0 1 22 0v29"/><path class="glow" d="M5 38V9a11 11 0 0 1 22 0v29"/><circle cx="21.5" cy="24" r="1.6"/></svg>'
 };
@@ -99,8 +101,8 @@ function chrome(active, opts = {}) {
   if (!show) return;
   $('#top-who').textContent = u.role === 'admin' ? 'Admin' : state.client?.business_name || '';
   const items = u.role === 'admin'
-    ? [['/', 'Today', I.today], ['/clients', 'Clients', I.clients], ['/account', 'Account', I.me]]
-    : [['/', 'Home', I.home], ['/site', 'My site', I.site], ['/requests', 'Requests', I.req], ['/account', 'Account', I.me]];
+    ? [['/', 'Today', I.today], ['/clients', 'Clients', I.clients], ['/money', 'Money', I.money], ['/account', 'Account', I.me]]
+    : [['/', 'Home', I.home], ['/site', 'My site', I.site], ['/requests', 'Requests', I.req], ['/billing', 'Billing', I.money], ['/account', 'Account', I.me]];
   tabs.innerHTML = items.map(([p, label, icon]) =>
     `<a href="#${p}" class="${active === p ? 'on' : ''}" ${active === p ? 'aria-current="page"' : ''}>${icon}<span>${label}</span></a>`).join('');
 }
@@ -220,11 +222,23 @@ function accountView() {
     <h1>${esc(u.name)}</h1>
     <p class="lede">${esc(u.email)}${state.client ? ` · ${esc(state.client.business_name)}` : ''}</p>
     <a class="card tight" href="#/password-change"><h3>Change password</h3><p class="faint">Signs you out on other devices</p></a>
+    <div class="card tight row" id="pushrow"><div class="grow"><h3>Phone notifications</h3><p class="faint" id="pushst">Checking...</p></div><span id="pushbtns"></span></div>
     ${u.role === 'client' ? `<div class="card tight"><h3>Talk to Jordan</h3><p class="muted">For anything about your site, use <a href="#/requests/new">a request</a> so it's all kept in one place. Something urgent and the site's down? Mark the request as urgent and I'll see it straight away.</p></div>` : ''}
     <button class="btn ghost block" id="out">Log out</button>
     <p class="faint">Sidedoor Digital · 98 King Street, Southport · getsidedoor.co.uk</p>
   </div>`);
   $('#out').onclick = logout;
+  const drawPush = async () => {
+    let st; try { st = await pushState(); } catch { st = 'unsupported'; }
+    const label = { on: 'On for this phone', off: 'Off', denied: 'Blocked. Allow them in your phone settings.', unsupported: "This browser can't do notifications", 'needs-install': 'Add the app to your home screen first, then open it from there' }[st];
+    $('#pushst').textContent = label;
+    $('#pushbtns').innerHTML = st === 'on' ? '<button class="btn ghost small" id="ptest">Test</button> <button class="btn ghost small" id="poff">Turn off</button>'
+      : st === 'off' ? '<button class="btn small" id="pon">Turn on</button>' : '';
+    $('#pon')?.addEventListener('click', async () => { try { await enablePush(); toast('Notifications on'); drawPush(); } catch (e) { toast(e.message, true); } });
+    $('#poff')?.addEventListener('click', async () => { await disablePush(); toast('Notifications off'); drawPush(); });
+    $('#ptest')?.addEventListener('click', async () => { try { await api('/push/test', { method: 'POST', body: {} }); toast('Sent. It should pop up in a moment.'); } catch (e) { toast(e.message, true); } });
+  };
+  drawPush();
 }
 
 /* ---------- client: home ---------- */
@@ -234,6 +248,9 @@ async function clientHome() {
   const d = await api('/home');
   const site = d.sites[0];
   const needOk = d.open_requests.filter((r) => r.status === 'quoted');
+  let bills = null;
+  try { bills = await api('/billing'); } catch {}
+  const dueBill = bills?.invoices.find((i) => i.status === 'sent' && !i.claimed_paid_at);
   render(`<div class="stack">
     <p class="eyebrow">${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
     <h1>${greeting()}, ${esc(firstName(state.user.name))}.</h1>
@@ -250,7 +267,11 @@ async function clientHome() {
       <div class="card stat"><b>${d.done_count}</b><span>Jobs done</span></div>
       <div class="card stat"><b>${money(d.client.hourly_rate_pence)}</b><span>Per hour</span></div>
     </div>
+    ${dueBill ? `<a class="card night" href="#/billing/${esc(dueBill.id)}"><p class="eyebrow">${dueBill.overdue ? 'Overdue' : 'Bill ready'}</p>
+        <div class="row between"><h2>${esc(dueBill.title)}</h2><span class="price-sm">${money(dueBill.total_pence)}</span></div>
+        <span class="btn neon small">Pay with Revolut</span></a>` : ''}
     <a class="btn neon block" href="#/requests/new">Ask for a change</a>
+    ${pushNudge()}
     <div class="section-title"><h2>On the go</h2><a class="faint" href="#/requests">See all</a></div>
     <div class="list">${d.open_requests.length ? d.open_requests.slice(0, 5).map((r) => requestCard(r)).join('')
       : emptyBlock(I.req, 'Nothing on the go', 'When you want something changed, send it through and I will quote it.')}</div>
@@ -474,6 +495,7 @@ async function adminToday() {
       <div class="card stat"><b>${d.client_count}</b><span>Clients</span></div>
     </div>
     <div class="row"><a class="btn neon grow" href="#/clients/new">Add client</a><a class="btn ghost" href="#/requests/new">Log request</a></div>
+    ${pushNudge()}
     ${block('Needs a quote', d.needs_quote, 'Nothing new.')}
     ${block('To do', d.to_do, 'Nothing approved and waiting.')}
     ${block('Waiting on client', d.waiting_on_client, 'No quotes out.')}
@@ -516,7 +538,8 @@ function newClientView() {
         <div class="field"><label for="sn">Site name</label><input class="input" id="sn" name="site_name" placeholder="Main site"></div>
         <div class="field"><label for="su">Site address</label><input class="input" id="su" name="site_url" placeholder="example.co.uk" inputmode="url"></div>
       </div>
-      <div class="field"><label for="r">Hourly rate (£)</label><input class="input" id="r" name="rate" type="number" min="0" step="0.5" value="15"></div>
+      <div class="grid2"><div class="field"><label for="r">Hourly rate (£)</label><input class="input" id="r" name="rate" type="number" min="0" step="0.5" value="15"></div>
+      <div class="field"><label for="mf">Monthly plan (£, 0 if none)</label><input class="input" id="mf" name="monthly" inputmode="decimal" value="0"></div></div>
       <div class="field"><label for="no">Private notes</label><textarea class="input" id="no" name="notes" placeholder="Only you see these"></textarea></div>
       <p class="error" role="alert"></p>
       <button class="btn neon block" type="submit">Create login</button>
@@ -526,6 +549,7 @@ function newClientView() {
     const body = {
       business_name: v.business_name, contact_name: v.contact_name, email: v.email, phone: v.phone, notes: v.notes,
       hourly_rate_pence: Math.round(Number(v.rate || 15) * 100),
+      monthly_fee_pence: Math.round(Number(v.monthly || 0) * 100),
       sites: v.site_url ? [{ name: v.site_name || v.business_name, url: v.site_url }] : []
     };
     const r = await api('/admin/clients', { method: 'POST', body });
@@ -621,12 +645,19 @@ async function clientDetailView(id) {
     <div class="section-title"><h2>Requests</h2></div>
     <div class="list">${d.requests.map((r) => requestCard(r)).join('') || '<p class="faint">None yet.</p>'}</div>
 
+    <div class="section-title"><h2>Billing</h2><a class="faint" href="#/invoices/new?client=${esc(c.id)}">New bill</a></div>
+    <p class="faint">${c.monthly_fee_pence ? `${money(c.monthly_fee_pence)} a month${c.monthly_from ? `, from ${monthLabel(c.monthly_from)}` : ''}` : 'No monthly plan'}${c.pay_link ? ' · Own pay link' : ''}</p>
+    <div class="list">${d.invoices.map((i) => invoiceCard(i)).join('') || '<p class="faint">No bills yet.</p>'}</div>
+
     <div class="section-title"><h2>Details</h2></div>
     <form class="card stack" id="ef">
       <div class="grid2"><div class="field"><label>Business name</label><input class="input" name="business_name" value="${esc(c.business_name)}"></div>
       <div class="field"><label>Contact name</label><input class="input" name="contact_name" value="${esc(c.contact_name)}"></div></div>
       <div class="grid2"><div class="field"><label>Phone</label><input class="input" name="phone" value="${esc(c.phone || '')}"></div>
       <div class="field"><label>Hourly rate (£)</label><input class="input" name="rate" type="number" step="0.5" min="0" value="${(c.hourly_rate_pence / 100).toFixed(2)}"></div></div>
+      <div class="grid2"><div class="field"><label>Monthly plan (£)</label><input class="input" name="monthly" inputmode="decimal" value="${(c.monthly_fee_pence / 100).toFixed(2)}"></div>
+      <div class="field"><label>Plan starts</label><input class="input" name="monthly_from" type="month" value="${esc(c.monthly_from || '')}"></div></div>
+      <div class="field"><label>Their own pay link (optional)</label><input class="input" name="pay_link" value="${esc(c.pay_link || '')}" placeholder="Uses your default"></div>
       <div class="field"><label>Private notes</label><textarea class="input" name="notes">${esc(c.notes || '')}</textarea></div>
       <p class="error"></p><button class="btn small" type="submit">Save</button>
     </form>
@@ -639,7 +670,7 @@ async function clientDetailView(id) {
     state.lastLogins = [{ ...r.login, phone: c.phone }]; go('/send');
   });
   onSubmit($('#ef'), async (v) => {
-    await api(`/admin/clients/${id}`, { method: 'PATCH', body: { business_name: v.business_name, contact_name: v.contact_name, phone: v.phone, notes: v.notes, hourly_rate_pence: Math.round(Number(v.rate) * 100) } });
+    await api(`/admin/clients/${id}`, { method: 'PATCH', body: { business_name: v.business_name, contact_name: v.contact_name, phone: v.phone, notes: v.notes, hourly_rate_pence: Math.round(Number(v.rate) * 100), monthly_fee_pence: Math.round(Number(v.monthly || 0) * 100), monthly_from: v.monthly_from, pay_link: v.pay_link } });
     toast('Saved'); route();
   });
   $$('[data-del-site]').forEach((b) => (b.onclick = async () => {
@@ -661,21 +692,23 @@ async function clientDetailView(id) {
 /* ---------- import ---------- */
 // Pre-filled with everyone Jordan has built for. Fill in emails and missing addresses.
 const IMPORT_SEED = [
-  { business_name: 'Candymonium', users: [{ name: 'Anthony', email: '' }], sites: [{ name: 'Candymonium', url: 'candymonium.co.uk' }] },
-  { business_name: "Digz N' Lidz", users: [{ name: 'Mark', email: '' }, { name: 'Danny', email: '' }], sites: [{ name: "Digz N' Lidz", url: 'digznlidz.co.uk' }] },
-  { business_name: 'WATAG', users: [{ name: 'Jay', email: '' }], sites: [{ name: 'WATAG', url: 'watagapp.co.uk' }] },
-  { business_name: 'Rubies & Pearls', users: [{ name: 'Ruby', email: '' }], sites: [{ name: 'Rubies & Pearls', url: 'rubiesandpearls.co.uk' }] },
-  { business_name: 'Dougie Joyce', users: [{ name: 'Dougie', email: '' }], sites: [
+  { business_name: 'Candymonium', monthly: '40', users: [{ name: 'Anthony', email: '' }], sites: [{ name: 'Candymonium', url: 'candymonium.co.uk' }] },
+  { business_name: "Digz N' Lidz", monthly: '47', users: [{ name: 'Mark', email: '' }, { name: 'Danny', email: '' }], sites: [{ name: "Digz N' Lidz", url: 'digznlidz.co.uk' }] },
+  { business_name: 'WATAG', monthly: '40', users: [{ name: 'Jay', email: '' }], sites: [{ name: 'WATAG', url: 'watagapp.co.uk' }] },
+  { business_name: 'Rubies & Pearls', monthly: '20', users: [{ name: 'Ruby', email: '' }], sites: [{ name: 'Rubies & Pearls', url: 'rubiesandpearls.co.uk' }] },
+  { business_name: 'Dougie Joyce', monthly: '50', users: [{ name: 'Dougie', email: '' }], sites: [
     { name: "Joyce's Irish Whiskey", url: 'joyceirishwhiskey.co.uk' },
     { name: '3D Fight Club', url: '3dfightclubofficial.com' },
     { name: 'Elite Force', url: '' }] },
-  { business_name: 'E. Bartlett', users: [{ name: '', email: '' }], sites: [{ name: 'Portaloo hire', url: '' }, { name: 'Exhibition', url: '' }] },
-  { business_name: 'Growing with Chaos', users: [{ name: '', email: '' }], sites: [{ name: 'Growing with Chaos', url: '' }] }
+  // Build starts 4 Nov, about 3 weeks, so the plan starts in December. Half the build now, half when live.
+  { business_name: 'E. Bartlett', monthly: '40', from: '2026-12', build: '475', paid: '0', users: [{ name: '', email: '' }],
+    sites: [{ name: 'Portaloo hire', url: '' }, { name: 'Exhibition', url: '' }] },
+  { business_name: 'Growing with Chaos', on: false, users: [{ name: '', email: '' }], sites: [{ name: 'Growing with Chaos', url: '' }] }
 ];
 
 function importView() {
   chrome('/clients', { wide: true });
-  const rows = structuredClone(IMPORT_SEED).map((r) => ({ ...r, on: true, phone: '' }));
+  const rows = structuredClone(IMPORT_SEED).map((r) => ({ on: true, phone: '', ...r }));
   const draw = () => {
     render(`<div class="stack">
       <a class="faint" href="#/clients">&larr; Clients</a>
@@ -696,6 +729,11 @@ function importView() {
             <button class="x" type="button" data-rm-s="${j}" aria-label="Remove site">&times;</button></div>`).join('')}
           <button class="linkish" type="button" data-add-s>+ Add site</button></div>
         <input class="input" data-k="phone" type="tel" placeholder="Phone for WhatsApp (optional)" value="${esc(r.phone)}">
+        <div class="grid2"><div class="field"><span class="label">Monthly plan £</span><input class="input" data-k="monthly" inputmode="decimal" value="${esc(r.monthly || '')}" placeholder="0"></div>
+          <div class="field"><span class="label">Plan starts</span><input class="input" data-k="from" type="month" value="${esc(r.from || '')}"></div></div>
+        <div class="grid2"><div class="field"><span class="label">Build fee £ (if still owed)</span><input class="input" data-k="build" inputmode="decimal" value="${esc(r.build || '')}" placeholder="Leave blank if paid"></div>
+          <div class="field"><span class="label">Already paid £</span><input class="input" data-k="paid" inputmode="decimal" value="${esc(r.paid || '')}" placeholder="0"></div></div>
+        ${Number(r.build) > Number(r.paid || 0) && !Number(r.paid) ? `<p class="hint">A deposit bill for half (£${(Number(r.build) / 2).toFixed(2)}) is drafted, ready to send.</p>` : ''}
       </div>`).join('')}</div>
       <button class="btn ghost" id="addc" type="button">+ Add another client</button>
       <p class="error" id="ierr" role="alert"></p>
@@ -711,6 +749,7 @@ function importView() {
         if (t.dataset.u) r.users[t.dataset.u][t.dataset.f] = t.value;
         if (t.dataset.s) r.sites[t.dataset.s][t.dataset.f] = t.value;
       });
+      card.addEventListener('change', (e) => { if (['build', 'paid'].includes(e.target.dataset.k)) draw(); });
       card.addEventListener('click', (e) => {
         const t = e.target;
         if ('addU' in t.dataset) { r.users.push({ name: '', email: '' }); draw(); }
@@ -723,7 +762,8 @@ function importView() {
     $('#go').onclick = async (e) => {
       const btn = e.currentTarget;
       const clients = rows.filter((r) => r.on).map((r) => ({
-        business_name: r.business_name, phone: r.phone,
+        business_name: r.business_name, phone: r.phone, monthly_fee_pence: Math.round(Number(r.monthly || 0) * 100), monthly_from: r.from || '',
+        build_fee_pence: Math.round(Number(r.build || 0) * 100), build_paid_pence: Math.round(Number(r.paid || 0) * 100),
         users: r.users.filter((u) => u.name || u.email),
         sites: r.sites.filter((s) => s.url.trim())
       }));
@@ -740,12 +780,286 @@ function importView() {
   draw();
 }
 
+/* ---------- phone notifications ---------- */
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+function keyBytes(b64) {
+  const s = b64.replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(s + '='.repeat((4 - (s.length % 4)) % 4)), (c) => c.charCodeAt(0));
+}
+async function pushState() {
+  if (!pushSupported()) return isIOS() && !isStandalone() ? 'needs-install' : 'unsupported';
+  if (Notification.permission === 'denied') return 'denied';
+  const reg = await navigator.serviceWorker.ready;
+  return (await reg.pushManager.getSubscription()) ? 'on' : 'off';
+}
+async function enablePush() {
+  const { key } = await api('/push/key');
+  if (!key) throw new Error("Notifications aren't switched on yet. Jordan's on it.");
+  if ((await Notification.requestPermission()) !== 'granted') throw new Error('Notifications were blocked. You can allow them in your phone settings.');
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) });
+  await api('/push/subscribe', { method: 'POST', body: sub.toJSON() });
+}
+async function disablePush() {
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription();
+  if (sub) {
+    await api('/push/subscribe', { method: 'DELETE', body: { endpoint: sub.endpoint } }).catch(() => {});
+    await sub.unsubscribe();
+  }
+}
+// Keeps this phone linked to whoever is logged in on it.
+async function syncPush() {
+  try {
+    if (!pushSupported() || Notification.permission !== 'granted') return;
+    const sub = await (await navigator.serviceWorker.ready).pushManager.getSubscription();
+    if (sub) await api('/push/subscribe', { method: 'POST', body: sub.toJSON() });
+  } catch {}
+}
+
+// Small card nudging people to switch notifications on. Fills itself in.
+function pushNudge() {
+  setTimeout(async () => {
+    const el = $('#push-nudge');
+    if (!el) return;
+    let st;
+    try { st = await pushState(); } catch { return; }
+    if (st === 'off' && Notification.permission === 'default') {
+      el.innerHTML = `<div class="card row">${I.bell.replace('<svg', '<svg class="bell"')}
+        <div class="grow"><h3>Get a ping on your phone</h3><p class="faint">${state.user.role === 'admin' ? 'New requests, approvals and payments.' : 'When a quote is ready, work is done or a bill comes in.'}</p></div>
+        <button class="btn small" id="push-on">Turn on</button></div>`;
+      $('#push-on').onclick = async () => {
+        try { await enablePush(); el.innerHTML = ''; toast('Notifications on'); } catch (e) { toast(e.message, true); }
+      };
+    } else if (st === 'needs-install') {
+      el.innerHTML = `<div class="card row">${I.bell.replace('<svg', '<svg class="bell"')}<div class="grow"><h3>Want notifications?</h3>
+        <p class="faint">Add this app to your home screen first (Share, then Add to Home Screen), then open it from there.</p></div></div>`;
+    }
+  }, 50);
+  return '<div id="push-nudge"></div>';
+}
+
+/* ---------- billing: shared ---------- */
+const INV_STATUS = { draft: 'Draft', sent: 'Due', paid: 'Paid', void: 'Cancelled' };
+const dateUK = (d) => (d ? new Date(d.length === 10 ? d + 'T12:00:00Z' : d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
+function invPill(i) {
+  if (i.status === 'sent' && i.claimed_paid_at) return '<span class="pill approved">Payment on its way</span>';
+  if (i.overdue) return '<span class="pill urgent">Overdue</span>';
+  const cls = { draft: 'new', sent: 'quoted', paid: 'done', void: 'cancelled' }[i.status];
+  return `<span class="pill ${cls}">${INV_STATUS[i.status]}</span>`;
+}
+function invoiceCard(i, showClient = false) {
+  return `<a class="card tight" href="#/billing/${esc(i.id)}">
+    <div class="row between"><h3 class="grow">${esc(i.title)}</h3><span class="mono">${money(i.total_pence)}</span></div>
+    <div class="meta row wrap">${invPill(i)}${showClient ? `<span class="faint">${esc(i.business_name)}</span>` : ''}
+      <span class="faint">${esc(i.ref)}</span>${i.status === 'sent' && i.due_date ? `<span class="faint">Due ${dateUK(i.due_date)}</span>` : ''}</div></a>`;
+}
+
+/* ---------- billing: client ---------- */
+async function billingView() {
+  chrome('/billing');
+  loading();
+  const d = await api('/billing');
+  const due = d.invoices.filter((i) => i.status === 'sent');
+  const past = d.invoices.filter((i) => i.status !== 'sent');
+  const pct = d.build ? Math.round((d.build.paid_pence / Math.max(1, d.build.total_pence)) * 100) : 0;
+  render(`<div class="stack">
+    <p class="eyebrow">Billing</p>
+    <h1>${d.outstanding_pence ? `${money(d.outstanding_pence)} to pay` : 'All paid up.'}</h1>
+    <p class="lede">${d.outstanding_pence ? 'Tap a bill to pay it with Revolut.' : 'Nothing owed. Thanks for keeping on top of it.'}</p>
+    ${due.map((i) => `<a class="card night" href="#/billing/${esc(i.id)}">
+      <p class="eyebrow">${i.claimed_paid_at ? 'Payment on its way' : i.overdue ? 'Overdue' : `Due ${dateUK(i.due_date)}`}</p>
+      <div class="row between"><h2>${esc(i.title)}</h2><span class="price-sm">${money(i.total_pence)}</span></div>
+      <span class="btn neon small">${i.claimed_paid_at ? 'View' : 'Pay now'}</span></a>`).join('')}
+    <div class="stats">
+      <div class="card stat"><b>${d.monthly_fee_pence ? money(d.monthly_fee_pence) : 'None'}</b><span>${d.monthly_from && d.monthly_from > new Date().toISOString().slice(0, 7) ? `Monthly plan from ${monthLabel(d.monthly_from)}` : 'Monthly plan'}</span></div>
+      <div class="card stat"><b>${money(d.hourly_rate_pence)}</b><span>Per hour for changes</span></div>
+      <div class="card stat"><b>${d.invoices.filter((i) => i.status === 'paid').length}</b><span>Bills paid</span></div>
+    </div>
+    ${d.build ? `<div class="card stack"><div class="row between"><h3>Your build</h3><span class="mono faint">${money(d.build.paid_pence)} of ${money(d.build.total_pence)}</span></div>
+      <div class="bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i data-w="${pct}"></i></div>
+      <p class="faint">${pct >= 100 ? 'Build fully paid. It is all yours.' : 'Paid off as each stage is billed.'}</p></div>` : ''}
+    <div class="card"><h3>How billing works</h3><p class="muted">On the 1st of each month you get one bill with your monthly plan plus any changes finished the month before. Every change was quoted and approved by you first, so there are no surprises.</p></div>
+    ${past.length ? `<div class="section-title"><h2>History</h2></div><div class="list">${past.map((i) => invoiceCard(i)).join('')}</div>` : ''}
+  </div>`);
+  $$('.bar i').forEach((b) => (b.style.width = `${Math.min(100, Number(b.dataset.w))}%`));
+}
+
+async function invoiceView(id) {
+  const admin = state.user.role === 'admin';
+  chrome(admin ? '/money' : '/billing');
+  loading();
+  const { invoice: i } = await api(`/invoices/${id}`);
+  const editable = admin && i.status === 'draft';
+  let actions = '';
+  if (!admin && i.status === 'sent') {
+    actions = i.claimed_paid_at
+      ? `<div class="card"><h3>Thanks, payment noted</h3><p class="muted">Jordan will tick it off once it lands. Nothing else to do.</p></div>`
+      : `<div class="stack">
+          ${i.pay_url ? `<a class="btn neon block" href="${esc(i.pay_url)}" target="_blank" rel="noopener">Pay ${money(i.total_pence)} with Revolut</a>` : ''}
+          <button class="btn ghost block" data-claim>I've already paid</button>
+          <p class="faint">Use <b>${esc(i.ref)}</b> as the reference so Jordan can match it up.</p></div>`;
+  } else if (admin) {
+    const a = [];
+    if (i.status === 'draft') a.push('<button class="btn neon" data-act="send">Send to client</button>');
+    if (i.status === 'sent' && i.claimed_paid_at) a.push('<button class="btn neon" data-act="paid">Confirm it arrived</button>', '<button class="btn ghost" data-act="not_received">Not arrived yet</button>');
+    else if (i.status === 'sent') a.push('<button class="btn neon" data-act="paid">Mark as paid</button>');
+    if (i.status === 'paid') a.push('<button class="btn ghost" data-act="unpaid">Reopen</button>');
+    if (i.status === 'draft' || i.status === 'sent') a.push('<button class="btn danger" data-act="void">Cancel bill</button>');
+    actions = `<div class="row wrap">${a.join('')}</div>`;
+  }
+
+  render(`<div class="stack">
+    <a class="faint" href="#${admin ? '/money' : '/billing'}">&larr; Back</a>
+    <div class="row wrap">${invPill(i)}<span class="faint">${esc(i.ref)}</span>${admin ? `<a class="faint" href="#/clients/${esc(i.client_id)}">${esc(i.business_name)}</a>` : ''}</div>
+    <h1>${esc(i.title)}</h1>
+    <div class="card invoice">
+      ${editable ? `<form class="stack" id="ef">
+        <div class="field"><label>Title</label><input class="input" name="title" value="${esc(i.title)}"></div>
+        <div class="field"><span class="label">Lines</span><div id="lines" class="stack"></div><button class="linkish" type="button" id="addl">+ Add line</button></div>
+        <div class="grid2"><div class="field"><label>Due date</label><input class="input" type="date" name="due_date" value="${esc(i.due_date || '')}"></div>
+        <div class="field"><label>Pay link (blank = default)</label><input class="input" name="pay_link" value="${esc(i.pay_link || '')}" placeholder="https://revolut.me/..."></div></div>
+        <div class="field"><label>Note to client</label><textarea class="input" name="note">${esc(i.note || '')}</textarea></div>
+        <p class="error"></p><button class="btn small" type="submit">Save draft</button></form>`
+      : `${i.lines.map((l) => `<div class="line"><span>${esc(l.description)}</span><span class="mono">${money(l.amount_pence)}</span></div>`).join('')}
+        <div class="line total"><span>Total</span><span class="mono">${money(i.total_pence)}</span></div>
+        ${i.note ? `<p class="muted">${esc(i.note)}</p>` : ''}
+        <p class="faint">${i.status === 'paid' ? `Paid ${dateUK(i.paid_at)}` : i.due_date ? `Due ${dateUK(i.due_date)}` : ''}${i.sent_at ? ` · Sent ${dateUK(i.sent_at)}` : ''}</p>`}
+    </div>
+    ${actions}
+    ${!admin ? '<p class="faint">Sidedoor Digital · 98 King Street, Southport PR8 0XX · Not VAT registered</p>' : ''}
+  </div>`);
+
+  if (editable) {
+    const lines = i.lines.map((l) => ({ description: l.description, amount: (l.amount_pence / 100).toFixed(2) }));
+    const drawLines = () => {
+      $('#lines').innerHTML = lines.map((l, j) => `<div class="mini-row"><input class="input" data-j="${j}" data-f="description" value="${esc(l.description)}" placeholder="What for">
+        <input class="input" data-j="${j}" data-f="amount" value="${esc(l.amount)}" inputmode="decimal" placeholder="£"><button class="x" type="button" data-rm="${j}" aria-label="Remove line">&times;</button></div>`).join('');
+    };
+    drawLines();
+    $('#lines').addEventListener('input', (e) => { const t = e.target; if (t.dataset.j) lines[t.dataset.j][t.dataset.f] = t.value; });
+    $('#lines').addEventListener('click', (e) => { if (e.target.dataset.rm) { lines.splice(Number(e.target.dataset.rm), 1); drawLines(); } });
+    $('#addl').onclick = () => { lines.push({ description: '', amount: '' }); drawLines(); };
+    onSubmit($('#ef'), async (v) => {
+      await api(`/admin/invoices/${id}`, { method: 'PATCH', body: { action: 'edit', ...v,
+        lines: lines.map((l) => ({ description: l.description, amount_pence: Math.round(Number(l.amount) * 100) })) } });
+      toast('Draft saved'); route();
+    });
+  }
+  $$('[data-act]').forEach((b) => (b.onclick = async () => {
+    const act = b.dataset.act;
+    if (act === 'void' && !confirm('Cancel this bill? Any change work on it goes back to be billed later.')) return;
+    if (act === 'send' && editable && !confirm(`Send ${money(i.total_pence)} to ${i.business_name}? Save any edits first.`)) return;
+    b.disabled = true;
+    try {
+      await api(`/admin/invoices/${id}`, { method: 'PATCH', body: { action: act } });
+      toast({ send: 'Sent. Their phone will ping.', paid: 'Marked as paid', unpaid: 'Reopened', void: 'Cancelled', not_received: 'Back to unpaid' }[act]);
+      route();
+    } catch (e) { toast(e.message, true); b.disabled = false; }
+  }));
+  $('[data-claim]')?.addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    try { await api(`/invoices/${id}/paid`, { method: 'POST', body: {} }); toast("Thanks! I'll confirm once it lands."); route(); }
+    catch (x) { toast(x.message, true); e.target.disabled = false; }
+  });
+}
+
+/* ---------- billing: admin ---------- */
+async function moneyView() {
+  chrome('/money');
+  loading();
+  const d = await api('/admin/billing');
+  const section = (title, list, extra = '') => list.length ? `<div class="section-title"><h2>${title}</h2>${extra}</div><div class="list">${list.map((i) => invoiceCard(i, true)).join('')}</div>` : '';
+  render(`<div class="stack">
+    <p class="eyebrow">Money</p>
+    <h1>${money(d.outstanding_pence)} owed</h1>
+    <p class="lede">${money(d.paid_this_month_pence)} in so far this month.</p>
+    ${!d.push_ready ? '<div class="card"><h3>Phone notifications are off</h3><p class="faint">Add the VAPID secrets in Cloudflare (see README) so clients get pinged when bills go out.</p></div>' : ''}
+    ${!d.settings.default_pay_link ? '<div class="card night"><h3>Add your Revolut link</h3><p class="muted">Bills can\'t go out until there is a link to pay with. Settings are at the bottom.</p></div>' : ''}
+    <div class="stats">
+      <div class="card stat"><b>${money(d.monthly_recurring_pence)}</b><span>Monthly plans</span></div>
+      <div class="card stat"><b>${d.drafts.length}</b><span>Ready to send</span></div>
+      <div class="card stat"><b>${d.to_confirm.length}</b><span>To confirm</span></div>
+    </div>
+    ${d.drafts.length ? `<button class="btn neon block" id="sendall">Send all ${d.drafts.length} bill${d.drafts.length === 1 ? '' : 's'}</button>` : ''}
+    <div class="row"><button class="btn ghost grow" id="run">Build ${esc(monthLabel(d.period))} bills now</button><a class="btn ghost" href="#/invoices/new">One-off bill</a></div>
+    <p class="faint">This happens by itself on the 1st. Clients already billed for the month are skipped.</p>
+    ${section('Say they have paid', d.to_confirm)}
+    ${section('Ready to send', d.drafts)}
+    ${section('Waiting on payment', d.unpaid)}
+    ${section('Recently paid', d.recent_paid)}
+    <div class="section-title"><h2>Settings</h2></div>
+    <form class="card stack" id="sf">
+      <div class="field"><label for="pl">Your Revolut link</label><input class="input" id="pl" name="default_pay_link" value="${esc(d.settings.default_pay_link)}" placeholder="https://revolut.me/yourname" inputmode="url">
+        <span class="hint">If your link can take an amount, put {amount} where it goes and each bill fills it in. A client can have their own link on their page.</span></div>
+      <label class="check"><input type="checkbox" name="auto_send" ${d.settings.auto_send ? 'checked' : ''}> Send bills automatically on the 1st (skip my check)</label>
+      <p class="error"></p><button class="btn small" type="submit">Save settings</button>
+    </form>
+  </div>`);
+  $('#sendall')?.addEventListener('click', async (e) => {
+    if (!confirm(`Send ${d.drafts.length} bills now? Each client gets a notification.`)) return;
+    e.target.disabled = true;
+    try { const r = await api('/admin/billing/send-all', { method: 'POST', body: {} }); toast(r.failed.length ? r.failed[0] : `${r.sent.length} sent`, !!r.failed.length); route(); }
+    catch (x) { toast(x.message, true); e.target.disabled = false; }
+  });
+  $('#run').onclick = async (e) => {
+    e.target.disabled = true;
+    try { const r = await api('/admin/billing/run', { method: 'POST', body: {} }); toast(r.created.length ? `${r.created.length} drafts made` : 'Nothing new to bill'); route(); }
+    catch (x) { toast(x.message, true); e.target.disabled = false; }
+  };
+  onSubmit($('#sf'), async (v) => { await api('/admin/billing', { method: 'PATCH', body: { default_pay_link: v.default_pay_link, auto_send: !!v.auto_send } }); toast('Saved'); route(); });
+}
+function monthLabel(period) {
+  const [y, m] = period.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-GB', { month: 'long', timeZone: 'UTC' });
+}
+
+async function newInvoiceView(query) {
+  chrome('/money');
+  loading();
+  const { clients } = await api('/admin/clients');
+  const pre = query.get('client') || '';
+  const presets = [['Build deposit', 'build'], ['Build balance', 'build'], ['Domain renewal', 'other'], ['Extra work', 'other']];
+  render(`<div class="stack">
+    <a class="faint" href="#/money">&larr; Money</a>
+    <p class="eyebrow">One-off bill</p>
+    <h1>New bill</h1>
+    <div class="chips" id="pre">${presets.map(([t, k]) => `<button type="button" class="chip" data-k="${k}">${t}</button>`).join('')}</div>
+    <form class="stack" id="f" novalidate>
+      <div class="field"><label for="c">Client</label><select class="input" id="c" name="client_id" required><option value="">Choose a client</option>
+        ${clients.filter((c) => !c.archived).map((c) => `<option value="${esc(c.id)}" ${c.id === pre ? 'selected' : ''}>${esc(c.business_name)}</option>`).join('')}</select></div>
+      <div class="grid2"><div class="field"><label for="t">Title</label><input class="input" id="t" name="title" required placeholder="Build deposit"></div>
+      <div class="field"><label for="k">Type</label><select class="input" id="k" name="kind"><option value="build">Build fee</option><option value="other">Other</option></select></div></div>
+      <div class="grid2"><div class="field"><label for="a">Amount (£)</label><input class="input" id="a" name="amount" inputmode="decimal" required></div>
+      <div class="field"><label for="dd">Due date</label><input class="input" id="dd" name="due_date" type="date"></div></div>
+      <div class="field"><label for="n">Note to client</label><textarea class="input" id="n" name="note" placeholder="Thanks for going with Sidedoor. Here's the deposit to get us started."></textarea></div>
+      <p class="error"></p>
+      <div class="grid2"><button class="btn neon" type="submit" name="go" value="send">Send now</button><button class="btn ghost" type="submit" name="go" value="draft">Save as draft</button></div>
+    </form>
+  </div>`);
+  $$('#pre .chip').forEach((c) => (c.onclick = () => { $('#t').value = c.textContent; $('#k').value = c.dataset.k; $('#a').focus(); }));
+  let mode = 'send';
+  $$('button[name=go]').forEach((b) => b.addEventListener('click', () => (mode = b.value)));
+  onSubmit($('#f'), async (v) => {
+    const amount = Math.round(Number(String(v.amount).replace(/[£,\s]/g, '')) * 100);
+    if (!amount) throw new Error('Pop in an amount');
+    const { invoice } = await api('/admin/invoices', { method: 'POST', body: {
+      client_id: v.client_id, kind: v.kind, title: v.title, note: v.note, due_date: v.due_date || null,
+      lines: [{ description: v.title, amount_pence: amount }], send: mode === 'send'
+    } });
+    toast(mode === 'send' ? 'Sent' : 'Draft saved');
+    go(`/billing/${invoice.id}`);
+  });
+}
+
 /* ---------- router ---------- */
 let cleanup = null;
 async function loadMe() {
   const d = await api('/auth/me');
   state.user = d.user;
   state.client = d.client;
+  if (d.user && !d.user.must_change_password) syncPush();
 }
 
 const routes = [
@@ -763,6 +1077,10 @@ const routes = [
   [/^\/clients$/, adminClients, 'admin'],
   [/^\/import$/, importView, 'admin'],
   [/^\/send$/, sendView, 'admin'],
+  [/^\/billing$/, billingView, 'client'],
+  [/^\/billing\/([\w-]+)$/, (m) => invoiceView(m[1]), 'any'],
+  [/^\/money$/, moneyView, 'admin'],
+  [/^\/invoices\/new$/, (m, q) => newInvoiceView(q), 'admin'],
   [/^\/$/, () => (state.user.role === 'admin' ? adminToday() : clientHome()), 'any']
 ];
 

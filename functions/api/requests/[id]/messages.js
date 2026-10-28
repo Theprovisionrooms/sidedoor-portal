@@ -1,5 +1,6 @@
 import { json, readBody, requireUser, text, uid, now } from '../../../../lib/http.js';
 import { loadRequest, messagesFor } from '../../../../lib/requests.js';
+import { notifyLater } from '../../../../lib/notify.js';
 
 export async function onRequestPost(ctx) {
   const user = requireUser(ctx);
@@ -12,5 +13,8 @@ export async function onRequestPost(ctx) {
       .bind(uid(), r.id, user.id, body, t),
     env.DB.prepare('UPDATE requests SET updated_at = ? WHERE id = ?').bind(t, r.id)
   ]);
+  const preview = body.length > 120 ? body.slice(0, 117) + '...' : body;
+  const msg = { title: user.role === 'admin' ? 'Message from Jordan' : `${r.business_name}: ${r.title}`, body: preview, url: `/#/requests/${r.id}` };
+  notifyLater(ctx, user.role === 'admin' ? { clientId: r.client_id } : { admins: true }, msg);
   return json({ messages: await messagesFor(env, r.id) }, 201);
 }
