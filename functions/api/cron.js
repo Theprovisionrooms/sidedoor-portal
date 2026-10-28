@@ -1,9 +1,13 @@
-// Called once a day by the small cron worker (cron-worker/). Guarded by CRON_SECRET.
-//   On the 1st: build this month's bills, then send them (auto send on) or ping Jordan to send.
-//   Every day: a gentle nudge on bills 3+ days overdue, at most once a week each.
+// Called by the small cron worker (cron-worker/). Guarded by CRON_SECRET.
+//   ?job=daily (or no job): on the 1st build this month's bills; every day, gentle nudges on overdue bills
+//   ?job=uptime            every 30 minutes, is each site up
+//   ?job=health            daily, padlock, certificate, security headers, domain renewal (a few sites per call)
+//   ?job=analytics         daily, Search Console numbers (a few sites per call)
 import { json, HttpError, now } from '../../lib/http.js';
 import { generateMonthly, sendInvoice, listInvoices, settings, currentPeriod, ukDay } from '../../lib/billing.js';
 import { notify } from '../../lib/notify.js';
+import { uptimeRun, deepCheckDue } from '../../lib/health.js';
+import { syncDue } from '../../lib/google.js';
 
 function safeEqual(a, b) {
   if (!a || !b || a.length !== b.length) return false;
@@ -15,6 +19,11 @@ function safeEqual(a, b) {
 export async function onRequestPost({ request, env }) {
   if (!safeEqual(request.headers.get('x-cron-secret') || '', env.CRON_SECRET || '')) throw new HttpError(404, 'Not found');
   const url = new URL(request.url);
+  const job = url.searchParams.get('job') || 'daily';
+  if (job === 'uptime') return json(await uptimeRun(env));
+  if (job === 'health') return json(await deepCheckDue(env, env.APP_ORIGIN || url.origin));
+  if (job === 'analytics') return json(await syncDue(env));
+  if (job !== 'daily') throw new HttpError(400, 'Unknown job');
   const force = url.searchParams.get('force') === 'monthly'; // for testing
   const report = { period: currentPeriod(), created: [], sent: [], reminded: [] };
 

@@ -1,7 +1,8 @@
 // Sidedoor Portal service worker. Network first so new deploys show straight away;
 // the cached shell only steps in when there's no signal.
-const CACHE = 'sidedoor-shell-v2';
-const SHELL = ['/', '/index.html', '/app.js', '/styles.css', '/manifest.webmanifest', '/icons/icon.svg'];
+const CACHE = 'sidedoor-shell-v3';
+const SHELL = ['/', '/index.html', '/app.js', '/styles.css', '/manifest.webmanifest', '/assets/art/door-mark.webp', '/assets/brand/wm-sidedoor-ink.webp',
+  '/assets/art/city-sm.webp', '/assets/fonts/syne.woff2', '/assets/fonts/michroma.woff2', '/assets/fonts/zen-kaku.woff2'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

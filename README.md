@@ -89,7 +89,33 @@ npx.cmd wrangler pages dev
 ### Notifications
 Clients and you switch them on from the Home nudge or Account. On iPhone they only work once the app is added to the home screen and opened from there (iOS 16.4 or later). Account has a Test button.
 
+## Stage 3 and 4: brand, analytics, site health, ideas
+
+### What's new
+- The app now matches getsidedoor.co.uk: your fonts, door mark, wordmark, the city under paper and the rainy night panels.
+- **My site** is a hub: is each site up, protections on, Google numbers, and the behind-the-scenes log.
+- **Analytics** from Search Console: visits, times shown, average place, day by day, top searches and pages.
+- **Health checks**: up/down every 30 minutes (you get a ping after two misses in a row, and again when it's back), plus a daily check of the padlock, certificate, security headers and domain renewal.
+- **Security news**: post a scam or threat in plain English with "not affected", "handled" or "one thing to do".
+- **Behind the scenes log**: add what you did for a client from their page. They see it on their Security page.
+- **Ideas**: seasonal and growth ideas written from each build. Clients see the ones in season for their site. "Go ahead for £15" creates an approved job at that price. Manage them from Today > Ideas library.
+
+### One-time setup
+1. Apply the new migration: `npx.cmd wrangler d1 migrations apply sidedoor-portal --remote`
+2. Search Console secrets on the Pages project (Settings > Variables and secrets), both from the service account JSON file:
+   - `GSC_CLIENT_EMAIL` = the `client_email` value
+   - `GSC_PRIVATE_KEY` = the `private_key` value, the whole thing from `-----BEGIN PRIVATE KEY-----` to `-----END PRIVATE KEY-----\n`. Paste it as it appears in the file, the `\n` bits are fine.
+3. Optional: `APP_ORIGIN` = `https://app.getsidedoor.co.uk` if the app ever runs on another address too.
+4. Redeploy the Pages project, then redeploy the timer so it picks up the 30 minute check:
+   `npx.cmd wrangler deploy --config cron-worker/wrangler.toml`
+5. In the app: Today > Search Console > **Link sites and pull numbers now**.
+6. Push the client site security headers (separate zip, `client-site-headers.zip`) before clients log in, so their Security page shows all six protections on.
+
+### The timer
+- Every 30 minutes: up/down check on every site.
+- 08:07 UTC daily: bills (on the 1st) and reminders, then health checks, then analytics, a few sites per call so it stays inside Cloudflare's free limits.
+
 ## Coming next
 
-- Stage 3: analytics from Search Console per site.
-- Stage 4: automated security checks (SSL, uptime, headers, domain expiry) and seasonal recommendations per client.
+- Ideas for E. Bartlett once her two sites are built.
+- Anything that comes out of the first month of real use.

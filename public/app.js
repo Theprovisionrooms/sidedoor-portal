@@ -87,11 +87,13 @@ const I = {
   money: '<svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="13" rx="2.5"/><path d="M2.5 10.5h19M6.5 15h4"/></svg>',
   bell: '<svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>',
   inbox: '<svg viewBox="0 0 24 24"><path d="M4 13l2-8h12l2 8v6H4z"/><path d="M4 13h5l1 2h4l1-2h5"/></svg>',
-  door: '<svg viewBox="0 0 32 40" class="door"><path d="M5 38V9a11 11 0 0 1 22 0v29"/><path class="glow" d="M5 38V9a11 11 0 0 1 22 0v29"/><circle cx="21.5" cy="24" r="1.6"/></svg>'
+  door: '<img class="mark" src="/assets/art/door-mark.webp" alt="" width="84" height="106">',
+  wordmark: '<img class="wm" src="/assets/brand/wm-sidedoor-ink.webp" alt="Sidedoor" width="360" height="33"><img class="wm-digital" src="/assets/brand/wm-digital-ink.webp" alt="Digital" width="150" height="12">'
 };
 
 /* ---------- chrome ---------- */
 function chrome(active, opts = {}) {
+  if (active !== null || !opts.bare) document.body.classList.remove('at-door');
   const u = state.user;
   const show = !!u && !u.must_change_password && !opts.bare;
   top.hidden = !show;
@@ -140,18 +142,19 @@ function emptyBlock(icon, title, sub = '') {
 /* ---------- auth screens ---------- */
 function loginView() {
   chrome(null, { bare: true });
+  document.body.classList.add('at-door');
   render(`<div class="login">
-    ${I.door}
-    <p class="eyebrow">Sidedoor Digital</p>
-    <h1>Your site, sorted.</h1>
-    <p class="tagline">There's the obvious way of doing things. Then there's the Sidedoor.</p>
-    <form class="stack" id="f" novalidate>
-      <div class="field"><label for="email">Email</label><input class="input" id="email" name="email" type="email" autocomplete="username" required></div>
-      <div class="field"><label for="pw">Password</label><input class="input" id="pw" name="password" type="password" autocomplete="current-password" required></div>
-      <p class="error" role="alert"></p>
-      <button class="btn neon block" type="submit">Step inside</button>
-      <p class="faint">Forgotten it? Message Jordan and he'll reset it for you.</p>
-    </form>
+    <div class="center">${I.door}${I.wordmark}</div>
+    <div class="door-card">
+      <p class="tagline"><b>There's the obvious way of doing things.</b>Then there's the Sidedoor.</p>
+      <form class="stack" id="f" novalidate>
+        <div class="field"><label for="email">Email</label><input class="input" id="email" name="email" type="email" autocomplete="username" required></div>
+        <div class="field"><label for="pw">Password</label><input class="input" id="pw" name="password" type="password" autocomplete="current-password" required></div>
+        <p class="error" role="alert"></p>
+        <button class="btn neon block" type="submit"><i class="glyph" aria-hidden="true"></i>Step inside</button>
+        <p class="faint center">Forgotten it? Message Jordan and he'll reset it for you.</p>
+      </form>
+    </div>
   </div>`);
   onSubmit($('#f'), async (v) => {
     const r = await api('/auth/login', { method: 'POST', body: v });
@@ -163,7 +166,7 @@ function loginView() {
 function passwordView(forced) {
   chrome(forced ? null : '/account', { bare: forced });
   render(`<div class="${forced ? 'login' : 'stack'}">
-    ${forced ? I.door : ''}
+    ${forced ? `<div class="center">${I.door}</div>` : ''}
     <p class="eyebrow">${forced ? 'One quick thing' : 'Account'}</p>
     <h1>${forced ? `Welcome in, ${esc(firstName(state.user.name))}.` : 'Change password'}</h1>
     <p class="lede">${forced ? "Pick your own password and you're done. At least 10 characters. A short phrase works well." : 'At least 10 characters.'}</p>
@@ -192,7 +195,7 @@ function welcomeView() {
   chrome(null, { bare: true });
   const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
   render(`<div class="login stack">
-    ${I.door}
+    <div class="center">${I.door}</div>
     <h1>You're in.</h1>
     <p class="lede">This is where everything about your site lives now. See it live, send me changes, and see what I'm doing behind the scenes.</p>
     ${isStandalone() ? '' : `<div class="card"><h3>Pop it on your home screen</h3>
@@ -248,8 +251,12 @@ async function clientHome() {
   const d = await api('/home');
   const site = d.sites[0];
   const needOk = d.open_requests.filter((r) => r.status === 'quoted');
-  let bills = null;
-  try { bills = await api('/billing'); } catch {}
+  let bills = null, ideas = [], scenes = null;
+  await Promise.all([
+    api('/billing').then((b) => (bills = b)).catch(() => {}),
+    api('/ideas').then((r) => (ideas = r.ideas.filter((i) => !i.action))).catch(() => {}),
+    api('/insights').then((r) => (scenes = r)).catch(() => {})
+  ]);
   const dueBill = bills?.invoices.find((i) => i.status === 'sent' && !i.claimed_paid_at);
   render(`<div class="stack">
     <p class="eyebrow">${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
@@ -258,7 +265,7 @@ async function clientHome() {
         <p class="eyebrow">Needs your OK</p><h2>${esc(needOk[0].title)}</h2>
         <p class="muted">${duration(needOk[0].quoted_minutes)} · ${money(needOk[0].quoted_pence)}. Tap to approve.</p>
         ${needOk.length > 1 ? `<p class="faint">Plus ${needOk.length - 1} more waiting</p>` : ''}</a>` : ''}
-    ${site ? `<a class="card night" href="#/site/${esc(site.id)}">
+    ${site ? `<a class="card night" href="#/view/${esc(site.id)}">
         <p class="eyebrow">Your site</p><h2>${esc(hostOf(site.url))}</h2>
         <p class="muted">See it as your customers do, on phone and desktop.</p>
         <span class="btn ghost on-night small">View live site</span></a>` : ''}
@@ -272,58 +279,16 @@ async function clientHome() {
         <span class="btn neon small">Pay with Revolut</span></a>` : ''}
     <a class="btn neon block" href="#/requests/new">Ask for a change</a>
     ${pushNudge()}
+    ${scenes ? `<a class="card" href="#/site">
+      <div class="row between"><span class="eyebrow">Behind the scenes</span><span class="faint">This month</span></div>
+      <div class="scenes mt16"><div><b>${nf(scenes.checks_30d)}</b><span>Checks</span></div><div><b>${scenes.health.filter((h) => h.protections).reduce((t, h) => t + h.protections_ok, 0)}/${scenes.health.filter((h) => h.protections).reduce((t, h) => t + h.protections_total, 0) || '-'}</b><span>Protections</span></div><div><b>${scenes.analytics.find((a) => a.has_data) ? nf(scenes.analytics.reduce((t, a) => t + (a.now?.clicks || 0), 0)) : '-'}</b><span>Google visits</span></div></div>
+      ${scenes.log[0] ? `<p class="faint mt16">Latest: ${esc(scenes.log[0].title)}, ${ago(scenes.log[0].created_at)}</p>` : ''}</a>` : ''}
+    ${ideas.length ? `<div class="section-title"><h2>Ideas for right now</h2><a class="faint" href="#/ideas">All ideas</a></div><div class="list" id="ideas">${ideas.slice(0, 2).map((i) => ideaCard(i, d.client.hourly_rate_pence)).join('')}</div>` : ''}
     <div class="section-title"><h2>On the go</h2><a class="faint" href="#/requests">See all</a></div>
     <div class="list">${d.open_requests.length ? d.open_requests.slice(0, 5).map((r) => requestCard(r)).join('')
       : emptyBlock(I.req, 'Nothing on the go', 'When you want something changed, send it through and I will quote it.')}</div>
   </div>`);
-}
-
-/* ---------- site viewer ---------- */
-async function siteView(id) {
-  chrome('/site');
-  loading();
-  const d = await api('/home');
-  const sites = d.sites;
-  if (!sites.length) return render(emptyBlock(I.site, 'No site linked yet', 'Jordan will add it here.'));
-  const site = sites.find((s) => s.id === id) || sites[0];
-  let mode = innerWidth < 700 ? 'phone' : 'desktop';
-  render(`<div class="stack">
-    <p class="eyebrow">Live site</p>
-    <h1 class="site-title">${esc(hostOf(site.url))}</h1>
-    ${sites.length > 1 ? `<div class="chips">${sites.map((s) => `<a class="chip" href="#/site/${esc(s.id)}" aria-pressed="${s.id === site.id}">${esc(s.name)}</a>`).join('')}</div>` : ''}
-    <div class="row between wrap">
-      <div class="seg" role="group" aria-label="Device"><button data-m="phone">Phone</button><button data-m="desktop">Desktop</button></div>
-      <div class="row"><a class="btn ghost small" href="${esc(site.url)}" target="_blank" rel="noopener">Open</a>
-      <a class="btn small" href="#/requests/new?site=${esc(site.id)}">Change something</a></div>
-    </div>
-    <div class="stage" id="stage"><div class="scaler" id="scaler"></div></div>
-    <p class="faint">This is your real site, live right now. Scroll inside the frame to look around.</p>
-  </div>`);
-  const stage = $('#stage'), scaler = $('#scaler');
-  function draw() {
-    $$('.seg button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.m === mode));
-    const phone = mode === 'phone';
-    scaler.innerHTML = phone
-      ? `<div class="device phone-frame"><div class="notch"></div><div class="screen"><iframe title="Phone view of ${esc(site.name)}" src="${esc(site.url)}" referrerpolicy="no-referrer"></iframe></div></div>`
-      : `<div class="device desk-frame"><div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="addr">${esc(site.url)}</span></div><div class="screen"><iframe title="Desktop view of ${esc(site.name)}" src="${esc(site.url)}" referrerpolicy="no-referrer"></iframe></div></div>`;
-    fit();
-  }
-  function fit() {
-    const dev = $('.device', scaler);
-    if (!dev) return;
-    const w = dev.offsetWidth, h = dev.offsetHeight;
-    const availW = stage.clientWidth - 36;
-    const availH = mode === 'phone' ? Math.max(420, innerHeight - 330) : Infinity;
-    const k = Math.min(1, availW / w, availH / h);
-    dev.style.transform = `scale(${k})`;
-    scaler.style.width = `${w * k}px`;
-    scaler.style.height = `${h * k}px`;
-  }
-  $$('.seg button').forEach((b) => (b.onclick = () => { mode = b.dataset.m; draw(); }));
-  draw();
-  const onResize = () => fit();
-  addEventListener('resize', onResize);
-  cleanup = () => removeEventListener('resize', onResize);
+  if ($('#ideas')) wireIdeas($('#ideas'), ideas, d.client.hourly_rate_pence);
 }
 
 /* ---------- requests ---------- */
@@ -337,7 +302,7 @@ async function requestsList() {
     <p class="eyebrow">Requests</p>
     <div class="row between"><h1>Your changes</h1></div>
     <p class="lede">Work is ${money(state.client?.hourly_rate_pence ?? 1500)} an hour and most changes take under an hour. I'll always quote first, nothing starts until you say so.</p>
-    <a class="btn neon block" href="#/requests/new">Ask for a change</a>
+    <div class="row"><a class="btn neon grow" href="#/requests/new">Ask for a change</a><a class="btn ghost" href="#/ideas">Ideas</a></div>
     <div class="section-title"><h2>Open</h2></div>
     <div class="list">${open.length ? open.map((r) => requestCard(r)).join('') : emptyBlock(I.req, 'All clear', 'Nothing waiting.')}</div>
     ${past.length ? `<div class="section-title"><h2>Finished</h2></div><div class="list">${past.map((r) => requestCard(r)).join('')}</div>` : ''}
@@ -496,6 +461,11 @@ async function adminToday() {
     </div>
     <div class="row"><a class="btn neon grow" href="#/clients/new">Add client</a><a class="btn ghost" href="#/requests/new">Log request</a></div>
     ${pushNudge()}
+    ${d.watch.length ? `<div class="card ${d.watch.some((w) => w.level === 'bad') ? 'night' : ''}">
+      <p class="eyebrow">Sites to look at</p>
+      <ul class="watch mt8">${d.watch.map((w) => `<li class="${w.level}"><a href="#/clients/${esc(w.client_id)}"><b>${esc(w.site)}</b> <span>${esc(w.text)}</span></a></li>`).join('')}</ul></div>`
+      : d.sites_count ? `<div class="card tight row"><i class="led on"></i><span class="grow">All ${d.sites_count} sites up and protected.</span></div>` : ''}
+    <div class="tools"><a class="chip" href="#/admin-ideas">Ideas library</a><a class="chip" href="#/notes">Security news</a><a class="chip" href="#/gsc">Search Console</a></div>
     ${block('Needs a quote', d.needs_quote, 'Nothing new.')}
     ${block('To do', d.to_do, 'Nothing approved and waiting.')}
     ${block('Waiting on client', d.waiting_on_client, 'No quotes out.')}
@@ -627,13 +597,32 @@ async function clientDetailView(id) {
     <p class="eyebrow">${c.archived ? 'Archived client' : 'Client'}</p>
     <h1>${esc(c.business_name)}</h1>
     <p class="lede">${esc(c.contact_name)}${c.phone ? ` · <a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : ''} · ${money(c.hourly_rate_pence)}/hr</p>
-    <a class="btn neon block" href="#/requests/new?client=${esc(c.id)}">Log a request for them</a>
+    <div class="row"><a class="btn neon grow" href="#/requests/new?client=${esc(c.id)}">Log a request for them</a><a class="btn ghost" href="#/site?client=${esc(c.id)}">Their view</a></div>
 
     <div class="section-title"><h2>Sites</h2></div>
-    <div class="list">${d.sites.map((s) => `<div class="card tight row between"><div class="grow"><h3>${esc(s.name)}</h3><a class="faint" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(hostOf(s.url))}</a></div>
-      <button class="x" data-del-site="${esc(s.id)}" aria-label="Remove ${esc(s.name)}">&times;</button></div>`).join('') || '<p class="faint">No sites yet.</p>'}</div>
+    <div class="list">${d.sites.map((s) => {
+      let h = null; try { h = s.health ? JSON.parse(s.health) : null; } catch {}
+      const p = h?.protections, keys = ['https', 'hsts', 'nosniff', 'framing', 'referrer', 'permissions'];
+      const okN = p ? keys.filter((k) => p[k]).length : null;
+      return `<div class="card tight"><div class="row between"><div class="grow"><h3>${esc(s.name)}</h3><a class="faint" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(hostOf(s.url))}</a></div>
+        <button class="x" data-del-site="${esc(s.id)}" aria-label="Remove ${esc(s.name)}">&times;</button></div>
+        <p class="status-line"><i class="led ${s.down_since ? 'off' : h ? 'on' : ''}"></i>${s.down_since ? `Down since ${ago(s.down_since)}` : h ? `Checked ${ago(s.health_checked_at)}` : 'Not checked yet'}${okN != null ? ` · ${okN}/6 protections` : ''}${h && h.frames_in_app === false ? ' · blocks preview' : ''}${h?.domain_expires ? ` · domain to ${dateUK(h.domain_expires)}` : ''}</p>
+        <p class="faint">${s.gsc_property ? `Analytics: ${esc(s.gsc_property)}${s.analytics_error ? ` (error: ${esc(s.analytics_error)})` : s.analytics_synced_at ? `, synced ${ago(s.analytics_synced_at)}` : ''}` : 'Analytics not linked'}</p>
+        <button class="btn ghost small mt8" data-check="${esc(s.id)}">Check now</button></div>`;
+    }).join('') || '<p class="faint">No sites yet.</p>'}</div>
     <form class="card stack" id="sf"><div class="grid2"><input class="input" name="name" placeholder="Site name"><input class="input" name="url" placeholder="example.co.uk" required></div>
       <p class="error"></p><button class="btn ghost small" type="submit">Add site</button></form>
+
+    <div class="section-title"><h2>Behind the scenes</h2></div>
+    <form class="card stack" id="wf">
+      <p class="faint">Log anything you've done for them that they'd otherwise never see. It shows on their Security page.</p>
+      <div class="grid2"><select class="input" name="kind" aria-label="Type"><option value="update">Update</option><option value="security">Security</option><option value="backup">Backup</option><option value="speed">Speed</option><option value="other">Other</option></select>
+        <select class="input" name="site_id" aria-label="Site"><option value="">All their sites</option>${d.sites.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}</select></div>
+      <input class="input" name="title" required placeholder="e.g. Updated the payment library to the latest version">
+      <textarea class="input" name="body" placeholder="Optional detail, in plain English"></textarea>
+      <label class="check"><input type="checkbox" name="notify" value="1"> Ping their phone</label>
+      <p class="error"></p><button class="btn ghost small" type="submit">Add to their log</button>
+    </form>
 
     <div class="section-title"><h2>Logins</h2></div>
     <div class="list">${d.users.map((u) => `<div class="card tight row between"><div class="grow"><h3>${esc(u.name)}</h3>
@@ -665,6 +654,12 @@ async function clientDetailView(id) {
   </div>`);
 
   onSubmit($('#sf'), async (v) => { await api(`/admin/clients/${id}/sites`, { method: 'POST', body: v }); toast('Site added'); route(); });
+  onSubmit($('#wf'), async (v, form) => { await api('/admin/worklog', { method: 'POST', body: { ...v, client_id: id, notify: !!v.notify } }); toast('Added to their log'); form.reset(); });
+  $$('[data-check]').forEach((b) => (b.onclick = async () => {
+    b.disabled = true; b.textContent = 'Checking...';
+    try { await api('/admin/checks', { method: 'POST', body: { site_id: b.dataset.check } }); toast('Checked'); route(); }
+    catch (e) { toast(e.message, true); b.disabled = false; b.textContent = 'Check now'; }
+  }));
   onSubmit($('#uf'), async (v) => {
     const r = await api(`/admin/clients/${id}/users`, { method: 'POST', body: v });
     state.lastLogins = [{ ...r.login, phone: c.phone }]; go('/send');
@@ -695,11 +690,11 @@ const IMPORT_SEED = [
   { business_name: 'Candymonium', monthly: '40', users: [{ name: 'Anthony', email: '' }], sites: [{ name: 'Candymonium', url: 'candymonium.co.uk' }] },
   { business_name: "Digz N' Lidz", monthly: '47', users: [{ name: 'Mark', email: '' }, { name: 'Danny', email: '' }], sites: [{ name: "Digz N' Lidz", url: 'digznlidz.co.uk' }] },
   { business_name: 'WATAG', monthly: '40', users: [{ name: 'Jay', email: '' }], sites: [{ name: 'WATAG', url: 'watagapp.co.uk' }] },
-  { business_name: 'Rubies & Pearls', monthly: '20', users: [{ name: 'Ruby', email: '' }], sites: [{ name: 'Rubies & Pearls', url: 'rubiesandpearls.co.uk' }] },
+  { business_name: 'Rubies & Pearls', monthly: '20', users: [{ name: 'Ruby', email: '' }], sites: [{ name: 'Rubies & Pearls', url: 'www.rubiesandpearls.co.uk' }] },
   { business_name: 'Dougie Joyce', monthly: '50', users: [{ name: 'Dougie', email: '' }], sites: [
-    { name: "Joyce's Irish Whiskey", url: 'joyceirishwhiskey.co.uk' },
-    { name: '3D Fight Club', url: '3dfightclubofficial.com' },
-    { name: 'Elite Force', url: '' }] },
+    { name: "Joyce's Irish Whiskey", url: 'www.jiwhiskey.co.uk' },
+    { name: '3D Fight Club', url: 'www.3dfc.tv' },
+    { name: 'Elite Force', url: 'eliteforce.site' }] },
   // Build starts 4 Nov, about 3 weeks, so the plan starts in December. Half the build now, half when live.
   { business_name: 'E. Bartlett', monthly: '40', from: '2026-12', build: '475', paid: '0', users: [{ name: '', email: '' }],
     sites: [{ name: 'Portaloo hire', url: '' }, { name: 'Exhibition', url: '' }] },
@@ -1053,6 +1048,422 @@ async function newInvoiceView(query) {
   });
 }
 
+/* ---------- insights: shared ---------- */
+const nf = (n) => (n == null ? '-' : Number(n).toLocaleString('en-GB'));
+const VERDICT = { not_affected: ['done', 'Not affected'], handled: ['approved', 'Handled'], action: ['urgent', 'One thing to do'] };
+const LOG_KIND = { security: 'Security', update: 'Update', backup: 'Backup', speed: 'Speed', other: 'Work' };
+
+function change(now, before, { lowerIsBetter = false } = {}) {
+  if (before == null || now == null || !before) return '';
+  const pct = Math.round(((now - before) / before) * 100);
+  if (!pct) return '<span class="delta">Same as the 4 weeks before</span>';
+  const good = lowerIsBetter ? pct < 0 : pct > 0;
+  return `<span class="delta ${good ? 'up' : 'down'}">${pct > 0 ? '▲' : '▼'} ${Math.abs(pct)}% on the 4 weeks before</span>`;
+}
+function posChange(now, before) {
+  if (before == null || now == null) return '';
+  const d = Math.round((before - now) * 10) / 10;
+  if (!d) return '<span class="delta">Same as the 4 weeks before</span>';
+  return `<span class="delta ${d > 0 ? 'up' : 'down'}">${d > 0 ? '▲ Up' : '▼ Down'} ${Math.abs(d)} places</span>`;
+}
+
+// A small single-series line, no axes. Decorative: the numbers sit next to it.
+function sparkline(daily, key = 'clicks') {
+  if (!daily?.length) return '';
+  const W = 120, H = 34, max = Math.max(1, ...daily.map((d) => d[key]));
+  const pts = daily.map((d, i) => [(i / Math.max(1, daily.length - 1)) * W, H - 3 - (d[key] / max) * (H - 6)]);
+  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('');
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><path class="spark-area" d="${line}L${W},${H}L0,${H}Z"/><path class="spark-line" d="${line}"/></svg>`;
+}
+
+// Full chart: one series, one axis, crosshair and tooltip on hover or touch.
+function lineChart(el, daily, key, label) {
+  const W = Math.max(280, el.clientWidth), H = 220, L = 38, R = 10, T = 14, B = 26;
+  const max = Math.max(1, ...daily.map((d) => d[key]));
+  const step = Math.pow(10, Math.floor(Math.log10(max)));
+  const top = Math.ceil(max / step) * step;
+  const x = (i) => L + (i / Math.max(1, daily.length - 1)) * (W - L - R);
+  const y = (v) => T + (1 - v / top) * (H - T - B);
+  const line = daily.map((d, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(d[key]).toFixed(1)}`).join('');
+  const ticks = [0, top / 2, top];
+  const fmtD = (s) => new Date(s + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  const xl = [0, Math.floor((daily.length - 1) / 2), daily.length - 1];
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(label)} per day, ${esc(fmtD(daily[0].date))} to ${esc(fmtD(daily[daily.length - 1].date))}. Highest ${nf(max)}.">
+      ${ticks.map((t) => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/><text class="axis" x="${L - 8}" y="${y(t) + 4}" text-anchor="end">${nf(Math.round(t))}</text>`).join('')}
+      ${xl.map((i) => `<text class="axis" x="${x(i)}" y="${H - 6}" text-anchor="${i === 0 ? 'start' : i === daily.length - 1 ? 'end' : 'middle'}">${esc(fmtD(daily[i].date))}</text>`).join('')}
+      <path class="chart-area" d="${line}L${x(daily.length - 1)},${y(0)}L${x(0)},${y(0)}Z"/>
+      <path class="chart-line" d="${line}"/>
+      <line class="cross" y1="${T}" y2="${H - B}" x1="0" x2="0" hidden/>
+      <circle class="dot" r="4.5" cx="0" cy="0" hidden/>
+      <rect class="hit" x="${L}" y="0" width="${W - L - R}" height="${H}"/>
+    </svg><div class="tip" hidden></div>`;
+  const svg = $('svg', el), tip = $('.tip', el), cross = $('.cross', el), dot = $('.dot', el);
+  const show = (evt) => {
+    const box = svg.getBoundingClientRect();
+    const px = ((evt.clientX - box.left) / box.width) * W;
+    const i = Math.max(0, Math.min(daily.length - 1, Math.round(((px - L) / (W - L - R)) * (daily.length - 1))));
+    const d = daily[i];
+    cross.setAttribute('x1', x(i)); cross.setAttribute('x2', x(i)); cross.hidden = false;
+    dot.setAttribute('cx', x(i)); dot.setAttribute('cy', y(d[key])); dot.hidden = false;
+    tip.hidden = false;
+    tip.innerHTML = `<b>${nf(d[key])}</b> ${esc(label.toLowerCase())}<span>${esc(new Date(d.date + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }))}</span>`;
+    const left = (x(i) / W) * box.width;
+    tip.style.left = `${Math.min(Math.max(left, 60), box.width - 60)}px`;
+  };
+  const hide = () => { tip.hidden = true; cross.hidden = true; dot.hidden = true; };
+  const hit = $('.hit', el);
+  hit.addEventListener('pointermove', show);
+  hit.addEventListener('pointerdown', show);
+  hit.addEventListener('pointerleave', hide);
+}
+
+async function sitesForView(clientId) {
+  if (state.user.role === 'admin') return (await api(`/admin/clients/${clientId}`)).sites;
+  return (await api('/home')).sites;
+}
+
+/* ---------- client: my site hub ---------- */
+async function siteHub(query) {
+  const admin = state.user.role === 'admin';
+  const clientId = query.get('client') || '';
+  chrome(admin ? '/clients' : '/site');
+  loading();
+  const d = await api(`/insights${admin ? `?client=${encodeURIComponent(clientId)}` : ''}`);
+  const q = admin ? `?client=${encodeURIComponent(clientId)}` : '';
+  if (!d.health.length) return render(`<div class="stack">${admin ? `<a class="faint" href="#/clients/${esc(clientId)}">&larr; Client</a>` : ''}${emptyBlock(I.site, 'No site linked yet', 'Jordan will add it here.')}</div>`);
+  const down = d.health.filter((h) => h.up_now === false);
+  const protOk = d.health.reduce((t, h) => t + (h.protections_ok || 0), 0);
+  const protTotal = d.health.filter((h) => h.protections).reduce((t, h) => t + h.protections_total, 0);
+
+  render(`<div class="stack">
+    ${admin ? `<a class="faint" href="#/clients/${esc(clientId)}">&larr; Client (you're seeing what they see)</a>` : ''}
+    <p class="eyebrow">${d.health.length > 1 ? 'Your sites' : 'Your site'}</p>
+    <h1>${down.length ? 'One thing needs a look.' : 'All looked after.'}</h1>
+    <p class="lede">${down.length ? "Jordan's already been told and is on it." : 'Checked every 30 minutes, day and night. Here is what is going on behind the scenes.'}</p>
+
+    <div class="list">${d.health.map((h) => `<div class="card site-card ${h.up_now === false ? 'lit' : ''}">
+      <div class="row between"><div class="grow"><h2 class="site-title">${esc(hostOf(h.url))}</h2>
+        <p class="status-line"><i class="led ${h.up_now === false ? 'off' : h.up_now ? 'on' : ''}"></i>${h.up_now === false ? 'Down right now' : h.up_now ? `Up${h.last_checked_at ? `, checked ${ago(h.last_checked_at)}` : ''}` : 'First check runs shortly'}</p></div></div>
+      <div class="row wrap"><a class="btn small" href="#/view/${esc(h.site_id)}${q}">View live</a>${admin ? '' : `<a class="btn ghost small" href="#/requests/new?site=${esc(h.site_id)}">Change something</a>`}</div>
+    </div>`).join('')}</div>
+
+    <div class="stats">
+      <div class="card stat"><b>${nf(d.checks_30d)}</b><span>Checks this month</span></div>
+      <div class="card stat"><b>${protTotal ? `${protOk}/${protTotal}` : '-'}</b><span>Protections on</span></div>
+      <div class="card stat"><b>${d.jobs_30d}</b><span>Jobs done this month</span></div>
+    </div>
+
+    <div class="section-title"><h2>Found on Google</h2></div>
+    <div class="list">${d.analytics.map((a) => analyticsCard(a, q)).join('')}</div>
+
+    <div class="section-title"><h2>Behind the scenes</h2><a class="faint" href="#/security${q}">Security and full log</a></div>
+    <a class="card" href="#/security${q}">
+      ${d.notes[0] ? `<div class="row between"><span class="eyebrow">Security news</span>${verdictPill(d.notes[0].verdict)}</div><h3 class="mt8">${esc(d.notes[0].title)}</h3>` : ''}
+      ${d.log.length ? `<ul class="log ${d.notes[0] ? 'mt16' : ''}">${d.log.slice(0, 3).map(logItem).join('')}</ul>` : `<p class="muted">${d.notes[0] ? '' : 'Every check, update and fix shows up here.'}</p>`}
+    </a>
+  </div>`);
+}
+
+function verdictPill(v) {
+  const [cls, label] = VERDICT[v] || VERDICT.not_affected;
+  return `<span class="pill ${cls}">${label}</span>`;
+}
+function logItem(l) {
+  return `<li><span class="log-kind">${esc(LOG_KIND[l.kind] || 'Work')}</span><span class="grow"><b>${esc(l.title)}</b>${l.body ? `<span class="log-body">${esc(l.body)}</span>` : ''}</span><span class="log-when">${ago(l.created_at)}</span></li>`;
+}
+
+function analyticsCard(a, q = '') {
+  const head = `<div class="row between"><h3 class="grow">${esc(hostOf(a.url))}</h3></div>`;
+  if (!a.has_data) {
+    return `<div class="card">${head}<p class="muted mt8">${a.linked ? (a.error ? "Google hasn't let us in yet. Jordan's sorting it." : 'Connected. The first numbers land within a day.') : 'Being connected to Google Search Console. Numbers show here once it is.'}</p></div>`;
+  }
+  return `<a class="card" href="#/analytics/${esc(a.site_id)}${q}">
+    ${head}
+    <div class="row between mt8"><div><b class="big">${nf(a.now.clicks)}</b><span class="faint block">visits from Google, last 4 weeks</span>${change(a.now.clicks, a.before?.clicks)}</div>${sparkline(a.daily)}</div>
+    <p class="faint mt8">Shown in searches ${nf(a.now.impressions)} times. Tap for what people searched.</p>
+  </a>`;
+}
+
+/* ---------- site viewer (moved) ---------- */
+async function siteViewer(id, query) {
+  const admin = state.user.role === 'admin';
+  const clientId = query.get('client') || '';
+  chrome(admin ? '/clients' : '/site');
+  loading();
+  const sites = await sitesForView(clientId);
+  if (!sites.length) return render(emptyBlock(I.site, 'No site linked yet', 'Jordan will add it here.'));
+  const site = sites.find((s) => s.id === id) || sites[0];
+  const q = admin ? `?client=${encodeURIComponent(clientId)}` : '';
+  let mode = innerWidth < 700 ? 'phone' : 'desktop';
+  render(`<div class="stack">
+    <a class="faint" href="#/site${q}">&larr; ${sites.length > 1 ? 'Your sites' : 'Your site'}</a>
+    <p class="eyebrow">Live site</p>
+    <h1 class="site-title">${esc(hostOf(site.url))}</h1>
+    ${sites.length > 1 ? `<div class="chips">${sites.map((s) => `<a class="chip" href="#/view/${esc(s.id)}${q}" aria-pressed="${s.id === site.id}">${esc(s.name)}</a>`).join('')}</div>` : ''}
+    <div class="row between wrap">
+      <div class="seg" role="group" aria-label="Device"><button data-m="phone">Phone</button><button data-m="desktop">Desktop</button></div>
+      <div class="row"><a class="btn ghost small" href="${esc(site.url)}" target="_blank" rel="noopener">Open</a>
+      ${admin ? '' : `<a class="btn small" href="#/requests/new?site=${esc(site.id)}">Change something</a>`}</div>
+    </div>
+    <div class="stage" id="stage"><div class="scaler" id="scaler"></div></div>
+    <p class="faint">This is your real site, live right now. Scroll inside the frame to look around.</p>
+  </div>`);
+  const stage = $('#stage'), scaler = $('#scaler');
+  function draw() {
+    $$('.seg button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.m === mode));
+    scaler.innerHTML = mode === 'phone'
+      ? `<div class="device phone-frame"><div class="notch"></div><div class="screen"><iframe title="Phone view of ${esc(site.name)}" src="${esc(site.url)}" referrerpolicy="no-referrer"></iframe></div></div>`
+      : `<div class="device desk-frame"><div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="addr">${esc(site.url)}</span></div><div class="screen"><iframe title="Desktop view of ${esc(site.name)}" src="${esc(site.url)}" referrerpolicy="no-referrer"></iframe></div></div>`;
+    fit();
+  }
+  function fit() {
+    const dev = $('.device', scaler);
+    if (!dev) return;
+    const w = dev.offsetWidth, h = dev.offsetHeight;
+    const availH = mode === 'phone' ? Math.max(420, innerHeight - 330) : Infinity;
+    const k = Math.min(1, (stage.clientWidth - 36) / w, availH / h);
+    dev.style.transform = `scale(${k})`;
+    scaler.style.width = `${w * k}px`;
+    scaler.style.height = `${h * k}px`;
+  }
+  $$('.seg button').forEach((b) => (b.onclick = () => { mode = b.dataset.m; draw(); }));
+  draw();
+  const onResize = () => fit();
+  addEventListener('resize', onResize);
+  cleanup = () => removeEventListener('resize', onResize);
+}
+
+/* ---------- analytics detail ---------- */
+async function analyticsView(siteId, query) {
+  const admin = state.user.role === 'admin';
+  const q = admin && query.get('client') ? `?client=${encodeURIComponent(query.get('client'))}` : '';
+  chrome(admin ? '/clients' : '/site');
+  loading();
+  const a = await api(`/analytics/${siteId}`);
+  if (!a.has_data) return render(`<div class="stack"><a class="faint" href="#/site${q}">&larr; Back</a>${emptyBlock(I.site, 'No numbers yet', 'Once Google Search Console is connected, this fills in by itself.')}</div>`);
+  let metric = 'clicks';
+  const table = (rows, kind) => rows.length ? `<table class="data"><thead><tr><th>${kind === 'query' ? 'What they searched' : 'Page'}</th><th>Visits</th><th>Shown</th></tr></thead>
+    <tbody>${rows.map((r) => `<tr><td>${esc(kind === 'page' ? (r.key.replace(/^https?:\/\/[^/]+/, '') || '/') : r.key)}</td><td>${nf(r.clicks)}</td><td>${nf(r.impressions)}</td></tr>`).join('')}</tbody></table>`
+    : '<p class="faint">Not enough searches yet. Google hides rare searches to protect people\'s privacy.</p>';
+  render(`<div class="stack">
+    <a class="faint" href="#/site${q}">&larr; Back</a>
+    <p class="eyebrow">Google Search | last 4 weeks</p>
+    <h1 class="site-title">${esc(hostOf(a.site.url))}</h1>
+    <div class="stats">
+      <div class="card stat"><b>${nf(a.now.clicks)}</b><span>Visits from Google</span>${change(a.now.clicks, a.before?.clicks)}</div>
+      <div class="card stat"><b>${nf(a.now.impressions)}</b><span>Times shown</span>${change(a.now.impressions, a.before?.impressions)}</div>
+      <div class="card stat"><b>${a.now.position ?? '-'}</b><span>Average place</span>${posChange(a.now.position, a.before?.position)}</div>
+    </div>
+    <div class="card">
+      <div class="row between wrap"><h3>Day by day</h3><div class="seg" role="group" aria-label="Show"><button data-k="clicks" aria-pressed="true">Visits</button><button data-k="impressions">Shown</button></div></div>
+      <div class="chart" id="chart"></div>
+    </div>
+    <div class="section-title"><h2>What people searched</h2></div>
+    <div class="card">${table(a.queries, 'query')}</div>
+    <div class="section-title"><h2>Pages they landed on</h2></div>
+    <div class="card">${table(a.pages, 'page')}</div>
+    <div class="card">
+      <h3>What these mean</h3>
+      <p class="muted"><b>Visits</b> are people who clicked through to your site from Google. <b>Shown</b> is how many times your site appeared in someone's results. <b>Average place</b> is where you usually sit, 1 is the top spot.</p>
+      <p class="faint">Google's numbers run about two days behind. Updated ${a.synced_at ? ago(a.synced_at) : 'daily'}.</p>
+    </div>
+  </div>`);
+  const draw = () => lineChart($('#chart'), a.daily, metric, metric === 'clicks' ? 'Visits' : 'Times shown');
+  $$('.seg button').forEach((b) => (b.onclick = () => { metric = b.dataset.k; $$('.seg button').forEach((x) => x.setAttribute('aria-pressed', x === b)); draw(); }));
+  draw();
+  const onResize = () => draw();
+  addEventListener('resize', onResize);
+  cleanup = () => removeEventListener('resize', onResize);
+}
+
+/* ---------- security and the full log ---------- */
+async function securityView(query) {
+  const admin = state.user.role === 'admin';
+  const clientId = query.get('client') || '';
+  const q = admin ? `?client=${encodeURIComponent(clientId)}` : '';
+  chrome(admin ? '/clients' : '/site');
+  loading();
+  const d = await api(`/insights${q}`);
+  render(`<div class="stack">
+    <a class="faint" href="#/site${q}">&larr; Back</a>
+    <p class="eyebrow">Security</p>
+    <h1>Locked up properly.</h1>
+    <p class="lede">What's protecting your site, what Jordan's keeping an eye on, and everything done behind the scenes.</p>
+    ${d.health.map((h) => `<div class="card">
+      <div class="row between"><h3 class="grow site-title">${esc(hostOf(h.url))}</h3>${h.protections ? `<span class="mono">${h.protections_ok}/${h.protections_total}</span>` : ''}</div>
+      ${h.protections ? `<ul class="checks">${h.protections.map((p) => `<li class="${p.ok ? 'ok' : 'todo'}"><i aria-hidden="true">${p.ok ? '✓' : '○'}</i><span><b>${esc(p.label)}</b>${p.ok ? '' : ' <span class="pill plain">Being added</span>'}<span class="faint block">${esc(p.why)}</span></span><span class="sr-only">${p.ok ? 'On' : 'Being added'}</span></li>`).join('')}</ul>`
+        : '<p class="muted mt8">The first full check runs tonight.</p>'}
+      <dl class="facts">
+        <div><dt>Up time, last 30 days</dt><dd>${h.uptime_30d != null ? `${h.uptime_30d}%` : 'Measuring, give it a day'}</dd></div>
+        <div><dt>Speed</dt><dd>${h.avg_ms ? `${(h.avg_ms / 1000).toFixed(2)}s to respond` : '-'}</dd></div>
+        <div><dt>Padlock certificate</dt><dd>${h.cert_expires ? `Renews automatically. Current one runs to ${dateUK(h.cert_expires)}` : 'Renews automatically'}</dd></div>
+        <div><dt>Domain name</dt><dd>${h.domain_expires ? `Paid up to ${dateUK(h.domain_expires)}` : 'Checked daily'}</dd></div>
+      </dl>
+      ${admin && h.protections && !h.csp_scripts ? '<p class="faint mt8">Admin only: no script-locking policy yet.</p>' : ''}
+    </div>`).join('')}
+
+    <div class="section-title"><h2>Security news</h2></div>
+    <div class="list">${d.notes.length ? d.notes.map((n) => `<div class="card">
+      <div class="row between wrap"><span class="faint">${dateUK(n.created_at)}</span>${verdictPill(n.verdict)}</div>
+      <h3 class="mt8">${esc(n.title)}</h3><p class="muted mt8 pre">${esc(n.body)}</p></div>`).join('')
+      : '<div class="card"><p class="muted">When a scam or threat is doing the rounds, Jordan explains it here and says whether it touches your site.</p></div>'}</div>
+
+    <div class="section-title"><h2>What's been done</h2></div>
+    <div class="card">${d.log.length ? `<ul class="log">${d.log.map(logItem).join('')}</ul>` : '<p class="muted">Updates, backups and fixes show up here as they happen.</p>'}</div>
+  </div>`);
+}
+
+/* ---------- ideas ---------- */
+function ideaCard(i, rate, opts = {}) {
+  const price = Math.round((i.minutes / 60) * rate);
+  const kind = i.kind === 'security' ? 'Security' : i.kind === 'growth' ? 'Idea' : 'For this time of year';
+  if (i.action === 'requested') {
+    return `<a class="card tight" href="#/requests/${esc(i.request_id)}"><p class="eyebrow">${kind}</p><h3 class="mt8">${esc(i.title)}</h3><p class="faint mt8">On its way. Tap to follow it.</p></a>`;
+  }
+  return `<div class="card idea ${opts.lit ? 'lit' : ''}" data-idea="${esc(i.id)}">
+    <p class="eyebrow">${kind}</p>
+    <h3 class="mt8">${esc(i.title)}</h3>
+    <p class="muted mt8">${esc(i.pitch)}</p>
+    <p class="mono mt8">${duration(i.minutes)} · ${money(price)}</p>
+    <div class="row wrap mt16"><button class="btn neon small" data-go="${esc(i.id)}">Go ahead for ${money(price)}</button><button class="linkish" data-skip="${esc(i.id)}">Not now</button></div>
+  </div>`;
+}
+
+function wireIdeas(root, ideas, rate) {
+  $$('[data-go]', root).forEach((b) => (b.onclick = async () => {
+    const i = ideas.find((x) => x.id === b.dataset.go);
+    const price = money(Math.round((i.minutes / 60) * rate));
+    if (!confirm(`Go ahead with "${i.title}" for ${price}? Jordan gets started and you'll never pay more than this.`)) return;
+    b.disabled = true;
+    try {
+      const r = await api(`/ideas/${i.id}`, { method: 'POST', body: { action: 'go' } });
+      toast("Done. Jordan's been told.");
+      go(`/requests/${r.request_id}`);
+    } catch (e) { toast(e.message, true); b.disabled = false; }
+  }));
+  $$('[data-skip]', root).forEach((b) => (b.onclick = async () => {
+    try {
+      await api(`/ideas/${b.dataset.skip}`, { method: 'POST', body: { action: 'dismiss' } });
+      b.closest('.idea').remove();
+      toast("No problem, it won't come up again this year.");
+    } catch (e) { toast(e.message, true); }
+  }));
+}
+
+async function ideasView() {
+  chrome('/requests');
+  loading();
+  const [{ ideas: now }, { ideas: all }] = await Promise.all([api('/ideas'), api('/ideas?all=1')]);
+  const rate = state.client?.hourly_rate_pence ?? 1500;
+  const later = all.filter((i) => !i.in_season && i.action !== 'requested');
+  render(`<div class="stack">
+    <a class="faint" href="#/requests">&larr; Requests</a>
+    <p class="eyebrow">Ideas</p>
+    <h1>Things worth doing.</h1>
+    <p class="lede">Picked for your site and the time of year. Tap go ahead and it's approved at the price shown, nothing more.</p>
+    <div class="list" id="now">${now.length ? now.map((i) => ideaCard(i, rate)).join('') : emptyBlock(I.req, 'Nothing right now', 'New ideas show up as the seasons change.')}</div>
+    ${later.length ? `<div class="section-title"><h2>Later in the year</h2></div><div class="list">${later.map((i) => `<div class="card tight"><h3>${esc(i.title)}</h3><p class="faint mt8">From ${esc(seasonLabel(i.starts))}</p></div>`).join('')}</div>` : ''}
+  </div>`);
+  wireIdeas($('#now'), now, rate);
+}
+function seasonLabel(mmdd) {
+  if (!mmdd) return 'any time';
+  const [m, d] = mmdd.split('-').map(Number);
+  return new Date(Date.UTC(2026, m - 1, d)).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', timeZone: 'UTC' });
+}
+
+/* ---------- admin: Search Console, ideas, notes ---------- */
+async function gscView() {
+  chrome('/');
+  loading();
+  const d = await api('/admin/gsc');
+  render(`<div class="stack">
+    <a class="faint" href="#/">&larr; Today</a>
+    <p class="eyebrow">Google Search Console</p>
+    <h1>Analytics</h1>
+    ${!d.configured ? `<div class="card night"><h3>Not connected yet</h3><p class="muted">Add GSC_CLIENT_EMAIL and GSC_PRIVATE_KEY as secrets in Cloudflare, then redeploy. The README has the steps.</p></div>` : `
+    <div class="card"><span class="label">Service account</span><p class="mono mt8 break">${esc(d.service_account)}</p>
+      <p class="faint mt8">Add this email as a Restricted user on each property in Search Console.</p></div>
+    ${d.error ? `<div class="card lit"><p class="error">${esc(d.error)}</p></div>` : ''}
+    <p class="muted">${d.properties.length} propert${d.properties.length === 1 ? 'y' : 'ies'} shared with it.</p>
+    <button class="btn neon block" id="link">Link sites and pull numbers now</button>`}
+    <div class="list">${d.sites.map((s) => `<div class="card tight"><div class="row between"><div class="grow"><h3>${esc(s.name)}</h3><p class="faint">${esc(s.business_name)} · ${esc(hostOf(s.url))}</p></div></div>
+      <p class="faint mt8">${s.gsc_property ? `Linked: <span class="mono">${esc(s.gsc_property)}</span>` : 'Not linked'}${s.analytics_synced_at ? ` · synced ${ago(s.analytics_synced_at)}` : ''}</p>
+      ${s.analytics_error ? `<p class="error">${esc(s.analytics_error)}</p>` : ''}</div>`).join('')}</div>
+  </div>`);
+  $('#link')?.addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    try {
+      const r = await api('/admin/gsc', { method: 'POST', body: {} });
+      toast(`${r.linked.length} linked, ${r.synced.length} synced${r.unmatched.length ? `, ${r.unmatched.length} without a property` : ''}`, !!r.failed.length);
+      route();
+    } catch (x) { toast(x.message, true); e.target.disabled = false; }
+  });
+}
+
+async function adminIdeasView() {
+  chrome('/');
+  loading();
+  const [{ ideas }, { clients }] = await Promise.all([api('/admin/ideas'), api('/admin/clients')]);
+  const who = (i) => i.business_name || (i.match_host ? i.match_host : 'Everyone');
+  render(`<div class="stack">
+    <a class="faint" href="#/">&larr; Today</a>
+    <p class="eyebrow">Ideas</p>
+    <h1>Ideas library</h1>
+    <p class="lede">Clients see these when they're in season and match their site. One tap and it's an approved job.</p>
+    <details class="card"><summary class="label">Add an idea</summary>
+      <form class="stack mt16" id="f" novalidate>
+        <div class="field"><label>Title</label><input class="input" name="title" required></div>
+        <div class="field"><label>The pitch, in your words</label><textarea class="input" name="pitch" required></textarea></div>
+        <div class="grid2"><div class="field"><label>Minutes</label><input class="input" name="minutes" inputmode="numeric" value="60"></div>
+          <div class="field"><label>Type</label><select class="input" name="kind"><option value="seasonal">Seasonal</option><option value="growth">Growth</option><option value="security">Security</option></select></div></div>
+        <div class="grid2"><div class="field"><label>Shows from (MM-DD, blank = always)</label><input class="input" name="starts" placeholder="11-01"></div>
+          <div class="field"><label>Until (MM-DD)</label><input class="input" name="ends" placeholder="12-20"></div></div>
+        <div class="grid2"><div class="field"><label>For sites on (domain)</label><input class="input" name="match_host" placeholder="Blank = every client"></div>
+          <div class="field"><label>Or one client</label><select class="input" name="client_id"><option value="">Not just one</option>${clients.filter((c) => !c.archived).map((c) => `<option value="${esc(c.id)}">${esc(c.business_name)}</option>`).join('')}</select></div></div>
+        <p class="error"></p><button class="btn neon" type="submit">Add idea</button>
+      </form></details>
+    <div class="list">${ideas.map((i) => `<div class="card tight ${i.active ? '' : 'dim'}">
+      <div class="row between"><h3 class="grow">${esc(i.title)}</h3><span class="mono">${duration(i.minutes)}</span></div>
+      <div class="meta"><span class="pill plain">${esc(who(i))}</span><span class="faint">${i.starts ? `${esc(seasonLabel(i.starts))} to ${esc(seasonLabel(i.ends))}` : 'Any time'}</span>
+        ${i.taken ? `<span class="pill done">${i.taken} said yes</span>` : ''}${i.passed ? `<span class="faint">${i.passed} passed</span>` : ''}</div>
+      <div class="row mt8"><button class="linkish" data-toggle="${esc(i.id)}" data-on="${i.active ? 0 : 1}">${i.active ? 'Switch off' : 'Switch on'}</button></div>
+    </div>`).join('')}</div>
+  </div>`);
+  onSubmit($('#f'), async (v) => { await api('/admin/ideas', { method: 'POST', body: v }); toast('Idea added'); route(); });
+  $$('[data-toggle]').forEach((b) => (b.onclick = async () => {
+    const i = ideas.find((x) => x.id === b.dataset.toggle);
+    try { await api('/admin/ideas', { method: 'PATCH', body: { ...i, active: b.dataset.on === '1' } }); route(); } catch (e) { toast(e.message, true); }
+  }));
+}
+
+async function adminNotesView() {
+  chrome('/');
+  loading();
+  const [{ notes }, { clients }] = await Promise.all([api('/admin/notes'), api('/admin/clients')]);
+  render(`<div class="stack">
+    <a class="faint" href="#/">&larr; Today</a>
+    <p class="eyebrow">Security news</p>
+    <h1>Tell them what's out there</h1>
+    <p class="lede">A scam doing the rounds, a big hack in the news, a fake renewal email. Explain it plainly and say what it means for them.</p>
+    <form class="card stack" id="f" novalidate>
+      <div class="field"><label>Title</label><input class="input" name="title" required placeholder="Fake domain renewal emails"></div>
+      <div class="field"><label>What it is and what to do</label><textarea class="input" name="body" required placeholder="You might get an email saying your domain is about to expire..."></textarea></div>
+      <div class="grid2"><div class="field"><label>For them, this is</label><select class="input" name="verdict"><option value="not_affected">Not affected</option><option value="handled">Handled by Jordan</option><option value="action">One thing to do</option></select></div>
+        <div class="field"><label>Who sees it</label><select class="input" name="client_id"><option value="">Every client</option>${clients.filter((c) => !c.archived).map((c) => `<option value="${esc(c.id)}">${esc(c.business_name)}</option>`).join('')}</select></div></div>
+      <label class="check"><input type="checkbox" name="notify" value="1"> Ping their phones</label>
+      <p class="error"></p><button class="btn neon" type="submit">Post it</button>
+    </form>
+    <div class="list">${notes.map((n) => `<div class="card tight"><div class="row between wrap">${verdictPill(n.verdict)}<span class="faint">${esc(n.business_name || 'Everyone')} · ${dateUK(n.created_at)}</span></div>
+      <h3 class="mt8">${esc(n.title)}</h3><p class="muted mt8 pre">${esc(n.body)}</p><button class="linkish" data-del="${esc(n.id)}">Delete</button></div>`).join('')}</div>
+  </div>`);
+  onSubmit($('#f'), async (v) => { v.notify = !!v.notify; await api('/admin/notes', { method: 'POST', body: v }); toast('Posted'); route(); });
+  $$('[data-del]').forEach((b) => (b.onclick = async () => {
+    if (!confirm('Delete this note?')) return;
+    await api(`/admin/notes?id=${encodeURIComponent(b.dataset.del)}`, { method: 'DELETE' }); route();
+  }));
+}
+
 /* ---------- router ---------- */
 let cleanup = null;
 async function loadMe() {
@@ -1071,7 +1482,14 @@ const routes = [
   [/^\/requests\/new$/, (m, q) => newRequest(q), 'any'],
   [/^\/requests\/([\w-]+)$/, (m) => requestDetail(m[1]), 'any'],
   [/^\/requests$/, requestsList, 'client'],
-  [/^\/site(?:\/([\w-]+))?$/, (m) => siteView(m[1]), 'client'],
+  [/^\/site$/, (m, q) => siteHub(q), 'any'],
+  [/^\/view\/([\w-]+)$/, (m, q) => siteViewer(m[1], q), 'any'],
+  [/^\/analytics\/([\w-]+)$/, (m, q) => analyticsView(m[1], q), 'any'],
+  [/^\/security$/, (m, q) => securityView(q), 'any'],
+  [/^\/ideas$/, ideasView, 'client'],
+  [/^\/gsc$/, gscView, 'admin'],
+  [/^\/admin-ideas$/, adminIdeasView, 'admin'],
+  [/^\/notes$/, adminNotesView, 'admin'],
   [/^\/clients\/new$/, newClientView, 'admin'],
   [/^\/clients\/([\w-]+)$/, (m) => clientDetailView(m[1]), 'admin'],
   [/^\/clients$/, adminClients, 'admin'],

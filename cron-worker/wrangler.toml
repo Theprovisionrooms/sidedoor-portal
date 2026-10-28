@@ -1,6 +1,6 @@
-# Tiny scheduled worker that pokes the app once a day.
-# Deploy once with: npx.cmd wrangler deploy --config cron-worker/wrangler.toml
-# Then: npx.cmd wrangler secret put CRON_SECRET --config cron-worker/wrangler.toml
+# Tiny scheduled worker that pokes the app.
+# Deploy with: npx.cmd wrangler deploy --config cron-worker/wrangler.toml
+# Then once: npx.cmd wrangler secret put CRON_SECRET --config cron-worker/wrangler.toml
 name = "sidedoor-portal-cron"
 main = "index.js"
 compatibility_date = "2026-10-01"
@@ -9,4 +9,4 @@ compatibility_date = "2026-10-01"
 APP_URL = "https://app.getsidedoor.co.uk"
 
 [triggers]
-crons = ["7 8 * * *"]   # 08:07 UTC every day
+crons = ["7 8 * * *", "*/30 * * * *"]   # 08:07 UTC daily jobs, and an up/down check every 30 minutes
