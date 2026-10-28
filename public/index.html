@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Sidedoor | Your site, sorted</title>
+  <meta name="description" content="Your Sidedoor app. See your site, send changes and keep track of everything in one place.">
+  <meta name="theme-color" content="#ECE5D6">
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Sidedoor">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <a class="skip" href="#view">Skip to content</a>
+  <div class="paper" aria-hidden="true"></div>
+  <header class="top" id="top" hidden>
+    <a class="brand" href="#/" aria-label="Sidedoor home">
+      <svg class="brand-mark" viewBox="0 0 32 40" aria-hidden="true"><path d="M5 38V9a11 11 0 0 1 22 0v29" /><path class="glow" d="M5 38V9a11 11 0 0 1 22 0v29" /><circle cx="21.5" cy="24" r="1.6" /></svg>
+      <span class="brand-word">SIDEDOOR</span>
+    </a>
+    <span class="top-who" id="top-who"></span>
+  </header>
+  <main id="view" class="view" tabindex="-1"></main>
+  <nav class="tabs" id="tabs" hidden aria-label="Main"></nav>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

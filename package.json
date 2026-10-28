@@ -1,0 +1,13 @@
+{
+  "name": "sidedoor-portal",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler pages dev",
+    "db:local": "wrangler d1 migrations apply sidedoor-portal --local",
+    "db:remote": "wrangler d1 migrations apply sidedoor-portal --remote"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}
