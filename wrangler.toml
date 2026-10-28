@@ -6,5 +6,5 @@ compatibility_date = "2026-10-01"
 binding = "DB"
 database_name = "sidedoor-portal"
 # Paste the id from: npx.cmd wrangler d1 create sidedoor-portal
-database_id = "REPLACE_WITH_D1_ID"
+database_id = "15759974-3a4d-406c-8415-9a986f7e2293"
 migrations_dir = "migrations"
