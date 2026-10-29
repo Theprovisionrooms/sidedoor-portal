@@ -31,8 +31,9 @@ export async function onRequestPost(ctx) {
     else unmatched.push(s.name);
   }
   const synced = [], failed = [];
-  for (const s of sites.filter((x) => x.gsc_property).slice(0, 8)) {
+  for (const s of sites.filter((x) => x.gsc_property).slice(0, 6)) {
     try { await syncSite(env, s); synced.push(s.name); } catch (e) { failed.push(`${s.name}: ${e.message}`); }
   }
-  return json({ linked, unmatched, synced, failed });
+  const left = sites.filter((x) => x.gsc_property).length - 6;
+  return json({ linked, unmatched, synced, failed, more: left > 0 ? left : 0 });
 }

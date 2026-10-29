@@ -12,7 +12,7 @@ export async function onRequestGet(ctx) {
   const s = await settings(env);
   return json({
     period: currentPeriod(),
-    settings: { default_pay_link: s.default_pay_link || '', auto_send: s.auto_send === '1' },
+    settings: { default_pay_link: s.default_pay_link || '', auto_send: s.auto_send === '1', referral_reward: s.referral_reward || '' },
     push_ready: !!(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY),
     monthly_recurring_pence: monthly,
     drafts: all.filter((i) => i.status === 'draft'),
@@ -36,6 +36,10 @@ export async function onRequestPatch(ctx) {
   }
   if ('auto_send' in b) {
     stmts.push(env.DB.prepare("INSERT INTO settings (key, value) VALUES ('auto_send', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(b.auto_send ? '1' : '0'));
+  }
+  if ('referral_reward' in b) {
+    const v = String(b.referral_reward || '').trim().slice(0, 120);
+    stmts.push(env.DB.prepare("INSERT INTO settings (key, value) VALUES ('referral_reward', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(v));
   }
   if (!stmts.length) throw new HttpError(400, 'Nothing to change');
   await env.DB.batch(stmts);

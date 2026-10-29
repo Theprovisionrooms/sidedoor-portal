@@ -115,6 +115,23 @@ Clients and you switch them on from the Home nudge or Account. On iPhone they on
 - Every 30 minutes: up/down check on every site.
 - 08:07 UTC daily: bills (on the 1st) and reminders, then health checks, then analytics, a few sites per call so it stays inside Cloudflare's free limits.
 
+## Stage 4: reports, deeper Google insight, speed, referrals
+
+### What's new
+- **Monthly report** for every client: visits from Google against last month, up time, checks, speed, protections, jobs done, the behind-the-scenes log and security news. "Save as PDF" prints a clean version. Clients get a ping on the 1st. You can open any client's from their page.
+- **Searches you nearly win**: searches where a site shows up but sits below the top 3, with a cautious estimate of the extra visits and an "Ask Jordan about this" button that starts a request.
+- **New searches finding you**, and **phones vs computers**.
+- **Speed**: Google's PageSpeed phone test once a week per site, as a score out of 100. "Check now" on a client's page runs it straight away.
+- **30-day up time strip** on My site and Security.
+- **Refer a business**: clients send a ready-made message or pass on details. You get a ping and a Leads list (Today > Leads, or Account). Set the thank-you line in Money > Settings.
+- **"Jordan usually quotes in..."** on Requests, worked out from the last 90 days once there are a few quotes.
+- Tab badges for things waiting, smooth page changes, and numbers that count up.
+
+### One-time setup
+1. `npx.cmd wrangler d1 migrations apply sidedoor-portal --remote`
+2. Redeploy the timer so it runs the weekly speed test: `npx.cmd wrangler deploy --config cron-worker/wrangler.toml`
+3. Optional: a free PageSpeed key so tests never hit Google's shared limit. In Google Cloud (same project), APIs & Services > Library > **PageSpeed Insights API** > Enable, then Credentials > Create credentials > API key. Add it to the Pages project as secret `PSI_API_KEY`.
+
 ## Coming next
 
 - Ideas for E. Bartlett once her two sites are built.

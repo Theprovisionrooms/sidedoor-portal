@@ -21,8 +21,8 @@ async function call(env, job) {
 async function daily(env) {
   await call(env, 'daily');
   // Health and analytics do a few sites per call; keep going until they're through.
-  for (const job of ['health', 'analytics']) {
-    for (let i = 0; i < 6; i++) {
+  for (const job of ['health', 'analytics', 'speed']) {
+    for (let i = 0; i < (job === 'speed' ? 4 : 6); i++) {
       const r = await call(env, job);
       if (!r.more) break;
     }

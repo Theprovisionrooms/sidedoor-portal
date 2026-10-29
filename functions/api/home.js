@@ -17,5 +17,12 @@ export async function onRequestGet(ctx) {
     "SELECT COUNT(*) AS done FROM requests WHERE client_id = ? AND status = 'done'"
   ).bind(user.client_id).first();
 
-  return json({ client, sites: sites.results, open_requests: open, done_count: done });
+  // How quickly Jordan usually quotes, across everyone, last 90 days. Shown once there's enough to be fair.
+  const { results: times } = await env.DB.prepare(
+    `SELECT (julianday(quoted_at) - julianday(created_at)) * 1440 AS mins FROM requests
+      WHERE quoted_at IS NOT NULL AND quoted_at > created_at AND created_at > ? ORDER BY mins`
+  ).bind(new Date(Date.now() - 90 * 864e5).toISOString()).all();
+  const reply_mins = times.length >= 3 ? Math.round(times[Math.floor(times.length / 2)].mins) : null;
+
+  return json({ client, sites: sites.results, open_requests: open, done_count: done, reply_mins });
 }

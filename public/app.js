@@ -47,6 +47,7 @@ async function api(path, { method = 'GET', body } = {}) {
   });
   let data = {};
   try { data = await res.json(); } catch {}
+  if (method !== 'GET') badgeTimer = 0;
   if (!res.ok) {
     if (res.status === 401 && !path.startsWith('/auth/login')) { state.user = null; go('/login'); }
     if (data.code === 'password_change') go('/password');
@@ -107,11 +108,20 @@ function chrome(active, opts = {}) {
     : [['/', 'Home', I.home], ['/site', 'My site', I.site], ['/requests', 'Requests', I.req], ['/billing', 'Billing', I.money], ['/account', 'Account', I.me]];
   tabs.innerHTML = items.map(([p, label, icon]) =>
     `<a href="#${p}" class="${active === p ? 'on' : ''}" ${active === p ? 'aria-current="page"' : ''}>${icon}<span>${label}</span></a>`).join('');
+  refreshBadges();
 }
 
 function render(html) {
-  view.innerHTML = `<div class="fade-in">${html}</div>`;
-  window.scrollTo(0, 0);
+  const paint = () => {
+    view.innerHTML = `<div class="fade-in">${html}</div>`;
+    $$('[data-w]', view).forEach((el) => (el.style.width = `${Math.min(100, Number(el.dataset.w) || 0)}%`));
+    window.scrollTo(0, 0);
+  };
+  const real = !html.includes('class="skeleton"');
+  if (real && document.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches && view.dataset.painted) {
+    document.startViewTransition(paint);
+  } else paint();
+  if (real) { view.dataset.painted = '1'; countUp(view); }
 }
 const loading = () => render('<div class="stack"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>');
 
@@ -226,6 +236,7 @@ function accountView() {
     <p class="lede">${esc(u.email)}${state.client ? ` · ${esc(state.client.business_name)}` : ''}</p>
     <a class="card tight" href="#/password-change"><h3>Change password</h3><p class="faint">Signs you out on other devices</p></a>
     <div class="card tight row" id="pushrow"><div class="grow"><h3>Phone notifications</h3><p class="faint" id="pushst">Checking...</p></div><span id="pushbtns"></span></div>
+    ${u.role === 'client' ? `<a class="card tight" href="#/refer"><h3>Refer a business</h3><p class="faint">Know someone who needs a site or an app?</p></a>` : `<a class="card tight" href="#/leads"><h3>Leads</h3><p class="faint">Businesses your clients have passed on</p></a>`}
     ${u.role === 'client' ? `<div class="card tight"><h3>Talk to Jordan</h3><p class="muted">For anything about your site, use <a href="#/requests/new">a request</a> so it's all kept in one place. Something urgent and the site's down? Mark the request as urgent and I'll see it straight away.</p></div>` : ''}
     <button class="btn ghost block" id="out">Log out</button>
     <p class="faint">Sidedoor Digital · 98 King Street, Southport · getsidedoor.co.uk</p>
@@ -283,10 +294,12 @@ async function clientHome() {
       <div class="row between"><span class="eyebrow">Behind the scenes</span><span class="faint">This month</span></div>
       <div class="scenes mt16"><div><b>${nf(scenes.checks_30d)}</b><span>Checks</span></div><div><b>${scenes.health.filter((h) => h.protections).reduce((t, h) => t + h.protections_ok, 0)}/${scenes.health.filter((h) => h.protections).reduce((t, h) => t + h.protections_total, 0) || '-'}</b><span>Protections</span></div><div><b>${scenes.analytics.find((a) => a.has_data) ? nf(scenes.analytics.reduce((t, a) => t + (a.now?.clicks || 0), 0)) : '-'}</b><span>Google visits</span></div></div>
       ${scenes.log[0] ? `<p class="faint mt16">Latest: ${esc(scenes.log[0].title)}, ${ago(scenes.log[0].created_at)}</p>` : ''}</a>` : ''}
+    ${new Date().getDate() <= 10 && scenes ? `<a class="card lit" href="#/report"><p class="eyebrow">New</p><h3 class="mt8">Your ${esc(new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() - 1, 1)).toLocaleDateString('en-GB', { month: 'long', timeZone: 'UTC' }))} report is in</h3><p class="faint mt8">Tap to see your month.</p></a>` : ''}
     ${ideas.length ? `<div class="section-title"><h2>Ideas for right now</h2><a class="faint" href="#/ideas">All ideas</a></div><div class="list" id="ideas">${ideas.slice(0, 2).map((i) => ideaCard(i, d.client.hourly_rate_pence)).join('')}</div>` : ''}
     <div class="section-title"><h2>On the go</h2><a class="faint" href="#/requests">See all</a></div>
     <div class="list">${d.open_requests.length ? d.open_requests.slice(0, 5).map((r) => requestCard(r)).join('')
       : emptyBlock(I.req, 'Nothing on the go', 'When you want something changed, send it through and I will quote it.')}</div>
+    <a class="card tight row" href="#/refer"><span class="grow"><b>Know a business that needs this?</b><span class="faint block">Send them my way</span></span><i class="glyph" aria-hidden="true"></i></a>
   </div>`);
   if ($('#ideas')) wireIdeas($('#ideas'), ideas, d.client.hourly_rate_pence);
 }
@@ -295,13 +308,16 @@ async function clientHome() {
 async function requestsList() {
   chrome('/requests');
   loading();
-  const { requests } = await api('/requests');
+  const [{ requests }, home] = await Promise.all([api('/requests'), api('/home').catch(() => ({}))]);
+  const reply = home.reply_mins;
+  const replyText = reply == null ? '' : reply < 60 ? 'under an hour' : reply < 180 ? `about ${Math.round(reply / 60)} hour${Math.round(reply / 60) === 1 ? '' : 's'}` : reply < 1440 ? 'the same day' : 'a day or so';
   const open = requests.filter((r) => ['new', 'quoted', 'approved', 'in_progress'].includes(r.status));
   const past = requests.filter((r) => !open.includes(r));
   render(`<div class="stack">
     <p class="eyebrow">Requests</p>
     <div class="row between"><h1>Your changes</h1></div>
     <p class="lede">Work is ${money(state.client?.hourly_rate_pence ?? 1500)} an hour and most changes take under an hour. I'll always quote first, nothing starts until you say so.</p>
+    ${replyText ? `<p class="status-line"><i class="led on"></i>Jordan usually quotes in ${replyText}</p>` : ''}
     <div class="row"><a class="btn neon grow" href="#/requests/new">Ask for a change</a><a class="btn ghost" href="#/ideas">Ideas</a></div>
     <div class="section-title"><h2>Open</h2></div>
     <div class="list">${open.length ? open.map((r) => requestCard(r)).join('') : emptyBlock(I.req, 'All clear', 'Nothing waiting.')}</div>
@@ -332,7 +348,7 @@ async function newRequest(query) {
       ${sites.length > 1 ? `<div class="field"><label for="site">Which site?</label><select class="input" id="site" name="site_id">
         ${sites.map((s) => `<option value="${esc(s.id)}" ${s.id === preSite ? 'selected' : ''}>${esc(s.name)} (${esc(hostOf(s.url))})</option>`).join('')}</select></div>`
         : sites.length === 1 ? `<input type="hidden" name="site_id" value="${esc(sites[0].id)}">` : ''}
-      <div class="field"><label for="title">In a few words</label><input class="input" id="title" name="title" maxlength="120" placeholder="e.g. New Christmas opening hours" required></div>
+      <div class="field"><label for="title">In a few words</label><input class="input" id="title" name="title" maxlength="120" placeholder="e.g. New Christmas opening hours" value="${esc(query.get('title') || '')}" required></div>
       <div class="field"><label for="details">The details</label><textarea class="input" id="details" name="details" maxlength="4000" placeholder="What should change, where on the site, and any wording or prices. Links help too." required></textarea></div>
       <label class="check"><input type="checkbox" name="urgent" value="1"> It's urgent (something's broken or time-critical)</label>
       <p class="error" role="alert"></p>
@@ -465,7 +481,7 @@ async function adminToday() {
       <p class="eyebrow">Sites to look at</p>
       <ul class="watch mt8">${d.watch.map((w) => `<li class="${w.level}"><a href="#/clients/${esc(w.client_id)}"><b>${esc(w.site)}</b> <span>${esc(w.text)}</span></a></li>`).join('')}</ul></div>`
       : d.sites_count ? `<div class="card tight row"><i class="led on"></i><span class="grow">All ${d.sites_count} sites up and protected.</span></div>` : ''}
-    <div class="tools"><a class="chip" href="#/admin-ideas">Ideas library</a><a class="chip" href="#/notes">Security news</a><a class="chip" href="#/gsc">Search Console</a></div>
+    <div class="tools"><a class="chip" href="#/leads">Leads</a><a class="chip" href="#/admin-ideas">Ideas library</a><a class="chip" href="#/notes">Security news</a><a class="chip" href="#/gsc">Search Console</a></div>
     ${block('Needs a quote', d.needs_quote, 'Nothing new.')}
     ${block('To do', d.to_do, 'Nothing approved and waiting.')}
     ${block('Waiting on client', d.waiting_on_client, 'No quotes out.')}
@@ -598,6 +614,7 @@ async function clientDetailView(id) {
     <h1>${esc(c.business_name)}</h1>
     <p class="lede">${esc(c.contact_name)}${c.phone ? ` · <a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : ''} · ${money(c.hourly_rate_pence)}/hr</p>
     <div class="row"><a class="btn neon grow" href="#/requests/new?client=${esc(c.id)}">Log a request for them</a><a class="btn ghost" href="#/site?client=${esc(c.id)}">Their view</a></div>
+    <a class="faint" href="#/report?client=${esc(c.id)}">Their monthly report</a>
 
     <div class="section-title"><h2>Sites</h2></div>
     <div class="list">${d.sites.map((s) => {
@@ -989,6 +1006,8 @@ async function moneyView() {
       <div class="field"><label for="pl">Your Revolut link</label><input class="input" id="pl" name="default_pay_link" value="${esc(d.settings.default_pay_link)}" placeholder="https://revolut.me/yourname" inputmode="url">
         <span class="hint">If your link can take an amount, put {amount} where it goes and each bill fills it in. A client can have their own link on their page.</span></div>
       <label class="check"><input type="checkbox" name="auto_send" ${d.settings.auto_send ? 'checked' : ''}> Send bills automatically on the 1st (skip my check)</label>
+      <div class="field"><label for="rr">Referral thank-you (shown to clients)</label><input class="input" id="rr" name="referral_reward" value="${esc(d.settings.referral_reward)}" placeholder="e.g. a month on me">
+        <span class="hint">Finishes the line "If they come on board, ... as a thank you." Leave blank to not offer anything.</span></div>
       <p class="error"></p><button class="btn small" type="submit">Save settings</button>
     </form>
   </div>`);
@@ -1003,7 +1022,7 @@ async function moneyView() {
     try { const r = await api('/admin/billing/run', { method: 'POST', body: {} }); toast(r.created.length ? `${r.created.length} drafts made` : 'Nothing new to bill'); route(); }
     catch (x) { toast(x.message, true); e.target.disabled = false; }
   };
-  onSubmit($('#sf'), async (v) => { await api('/admin/billing', { method: 'PATCH', body: { default_pay_link: v.default_pay_link, auto_send: !!v.auto_send } }); toast('Saved'); route(); });
+  onSubmit($('#sf'), async (v) => { await api('/admin/billing', { method: 'PATCH', body: { default_pay_link: v.default_pay_link, auto_send: !!v.auto_send, referral_reward: v.referral_reward } }); toast('Saved'); route(); });
 }
 function monthLabel(period) {
   const [y, m] = period.split('-').map(Number);
@@ -1144,7 +1163,9 @@ async function siteHub(query) {
     <div class="list">${d.health.map((h) => `<div class="card site-card ${h.up_now === false ? 'lit' : ''}">
       <div class="row between"><div class="grow"><h2 class="site-title">${esc(hostOf(h.url))}</h2>
         <p class="status-line"><i class="led ${h.up_now === false ? 'off' : h.up_now ? 'on' : ''}"></i>${h.up_now === false ? 'Down right now' : h.up_now ? `Up${h.last_checked_at ? `, checked ${ago(h.last_checked_at)}` : ''}` : 'First check runs shortly'}</p></div></div>
-      <div class="row wrap"><a class="btn small" href="#/view/${esc(h.site_id)}${q}">View live</a>${admin ? '' : `<a class="btn ghost small" href="#/requests/new?site=${esc(h.site_id)}">Change something</a>`}</div>
+      ${uptimeStrip(h.days)}
+      ${speedBlock(h.speed)}
+      <div class="row wrap mt16"><a class="btn small" href="#/view/${esc(h.site_id)}${q}">View live</a>${admin ? '' : `<a class="btn ghost small" href="#/requests/new?site=${esc(h.site_id)}">Change something</a>`}</div>
     </div>`).join('')}</div>
 
     <div class="stats">
@@ -1152,6 +1173,13 @@ async function siteHub(query) {
       <div class="card stat"><b>${protTotal ? `${protOk}/${protTotal}` : '-'}</b><span>Protections on</span></div>
       <div class="card stat"><b>${d.jobs_30d}</b><span>Jobs done this month</span></div>
     </div>
+
+    <a class="card night" href="#/report${q}">
+      <p class="eyebrow">Monthly report</p>
+      <h2>Your month at a glance</h2>
+      <p class="muted">Visits, checks, jobs done and everything behind the scenes, on one page you can save or print.</p>
+      <span class="btn ghost on-night small">Open report</span>
+    </a>
 
     <div class="section-title"><h2>Found on Google</h2></div>
     <div class="list">${d.analytics.map((a) => analyticsCard(a, q)).join('')}</div>
@@ -1254,14 +1282,17 @@ async function analyticsView(siteId, query) {
       <div class="card stat"><b>${nf(a.now.impressions)}</b><span>Times shown</span>${change(a.now.impressions, a.before?.impressions)}</div>
       <div class="card stat"><b>${a.now.position ?? '-'}</b><span>Average place</span>${posChange(a.now.position, a.before?.position)}</div>
     </div>
+    ${opportunitiesBlock(a.opportunities, a.site.id)}
     <div class="card">
       <div class="row between wrap"><h3>Day by day</h3><div class="seg" role="group" aria-label="Show"><button data-k="clicks" aria-pressed="true">Visits</button><button data-k="impressions">Shown</button></div></div>
       <div class="chart" id="chart"></div>
     </div>
     <div class="section-title"><h2>What people searched</h2></div>
     <div class="card">${table(a.queries, 'query')}</div>
+    ${newSearchesBlock(a.new_queries)}
     <div class="section-title"><h2>Pages they landed on</h2></div>
     <div class="card">${table(a.pages, 'page')}</div>
+    ${devicesBlock(a.devices)}
     <div class="card">
       <h3>What these mean</h3>
       <p class="muted"><b>Visits</b> are people who clicked through to your site from Google. <b>Shown</b> is how many times your site appeared in someone's results. <b>Average place</b> is where you usually sit, 1 is the top spot.</p>
@@ -1293,6 +1324,8 @@ async function securityView(query) {
       <div class="row between"><h3 class="grow site-title">${esc(hostOf(h.url))}</h3>${h.protections ? `<span class="mono">${h.protections_ok}/${h.protections_total}</span>` : ''}</div>
       ${h.protections ? `<ul class="checks">${h.protections.map((p) => `<li class="${p.ok ? 'ok' : 'todo'}"><i aria-hidden="true">${p.ok ? '✓' : '○'}</i><span><b>${esc(p.label)}</b>${p.ok ? '' : ' <span class="pill plain">Being added</span>'}<span class="faint block">${esc(p.why)}</span></span><span class="sr-only">${p.ok ? 'On' : 'Being added'}</span></li>`).join('')}</ul>`
         : '<p class="muted mt8">The first full check runs tonight.</p>'}
+      ${uptimeStrip(h.days) ? `<p class="label mt16">Last 30 days</p>${uptimeStrip(h.days)}` : ''}
+      ${speedBlock(h.speed) ? `<div class="mt16">${speedBlock(h.speed)}</div>` : ''}
       <dl class="facts">
         <div><dt>Up time, last 30 days</dt><dd>${h.uptime_30d != null ? `${h.uptime_30d}%` : 'Measuring, give it a day'}</dd></div>
         <div><dt>Speed</dt><dd>${h.avg_ms ? `${(h.avg_ms / 1000).toFixed(2)}s to respond` : '-'}</dd></div>
@@ -1464,6 +1497,222 @@ async function adminNotesView() {
   }));
 }
 
+/* ---------- stage 4: uptime strip, speed, opportunities ---------- */
+function uptimeStrip(days) {
+  if (!days?.length || !days.some((d) => d.n)) return '';
+  const cls = (d) => (!d.n ? 'none' : d.pct >= 99.5 ? 'good' : d.pct >= 95 ? 'blip' : 'bad');
+  const label = (d) => `${new Date(d.day + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}: ${d.n ? `${d.pct}% up, ${d.n} checks` : 'no checks yet'}`;
+  return `<div class="strip" role="img" aria-label="Up time for each of the last 30 days">${days.map((d) => `<i class="${cls(d)}" title="${esc(label(d))}"></i>`).join('')}</div>
+    <div class="strip-key"><span>30 days ago</span><span>Today</span></div>`;
+}
+
+function speedBlock(sp) {
+  if (!sp || sp.score == null) return '';
+  const grade = sp.score >= 90 ? ['good', 'Fast'] : sp.score >= 50 ? ['blip', 'OK'] : ['bad', 'Slow'];
+  const s = (ms) => (ms == null ? '-' : `${(ms / 1000).toFixed(1)}s`);
+  return `<div class="speed">
+    <div class="gauge ${grade[0]}" role="img" aria-label="Speed score ${sp.score} out of 100"><svg viewBox="0 0 36 36"><circle class="track" cx="18" cy="18" r="15.9"/><circle class="val" cx="18" cy="18" r="15.9" stroke-dasharray="${sp.score} 100"/></svg><b>${sp.score}</b></div>
+    <div class="grow"><b class="speed-head">${grade[1]} on phones</b>
+      <span class="faint block">Main content shows in ${s(sp.lcp_ms)}${sp.weight_kb ? `, page weighs ${sp.weight_kb > 1024 ? `${(sp.weight_kb / 1024).toFixed(1)}MB` : `${sp.weight_kb}KB`}` : ''}.</span>
+      <span class="faint block">Google's own test, run weekly. Over 90 is great.</span></div>
+  </div>`;
+}
+
+function opportunitiesBlock(list, siteId) {
+  if (!list?.length) return '';
+  return `<div class="card night">
+    <p class="eyebrow">Within reach</p>
+    <h2>Searches you nearly win</h2>
+    <p class="muted">You already show up for these, just not near the top. Most clicks go to the first three results.</p>
+    <ul class="opps">${list.map((o) => `<li>
+      <div class="row between"><b>"${esc(o.key)}"</b><span class="mono">#${Math.round(o.position)}</span></div>
+      <span class="faint block">Shown ${nf(o.impressions)} times in 4 weeks. In the top 3 that's roughly ${nf(o.potential)} more visits a month.</span>
+      ${state.user.role === 'client' ? `<a class="linkish" href="#/requests/new?site=${esc(siteId)}&title=${encodeURIComponent(`Help me rank for "${o.key}"`)}">Ask Jordan about this</a>` : ''}
+    </li>`).join('')}</ul>
+    <p class="faint">Estimates use a cautious 10% click rate for a top 3 spot.</p>
+  </div>`;
+}
+
+function devicesBlock(devices) {
+  if (!devices?.length) return '';
+  const names = { mobile: 'Phones', desktop: 'Computers', tablet: 'Tablets' };
+  const phone = devices.find((d) => d.key === 'mobile');
+  return `<div class="card">
+    <h3>What they search on</h3>
+    <ul class="bars mt16">${devices.map((d) => `<li><span class="bar-label">${esc(names[d.key] || d.key)}</span><span class="bar-track"><i data-w="${d.share}"></i></span><span class="mono">${d.share}%</span></li>`).join('')}</ul>
+    ${phone && phone.share >= 60 ? `<p class="faint mt16">${phone.share}% of your Google visitors are on a phone, so that's the version that matters most.</p>` : ''}
+  </div>`;
+}
+
+function newSearchesBlock(list) {
+  if (!list?.length) return '';
+  return `<div class="card"><h3>New searches finding you</h3><p class="faint">Not in your top searches the month before.</p>
+    <ul class="tags mt16">${list.map((q) => `<li>${esc(q.key)}</li>`).join('')}</ul></div>`;
+}
+
+/* ---------- monthly report ---------- */
+async function reportView(query) {
+  const admin = state.user.role === 'admin';
+  const clientId = query.get('client') || '';
+  const q = (extra = {}) => {
+    const p = new URLSearchParams(extra);
+    if (admin) p.set('client', clientId);
+    const s = p.toString();
+    return s ? `?${s}` : '';
+  };
+  chrome(admin ? '/clients' : '/site');
+  loading();
+  const { report: r, periods } = await api(`/report${q(query.get('period') ? { period: query.get('period') } : {})}`);
+  const t = r.totals;
+  const kindLabel = { security: 'Security', update: 'Update', backup: 'Backup', speed: 'Speed', other: 'Work' };
+  render(`<article class="report stack">
+    <div class="no-print row between wrap"><a class="faint" href="#/site${admin ? `?client=${esc(clientId)}` : ''}">&larr; Back</a><button class="btn ghost small" id="print">Save as PDF</button></div>
+    ${periods.length > 1 ? `<div class="chips no-print">${periods.map((p) => `<a class="chip" href="#/report${q({ period: p.period })}" aria-pressed="${p.period === r.period}">${esc(p.label)}</a>`).join('')}</div>` : ''}
+    <header class="report-head">
+      <img class="report-mark" src="/assets/art/door-mark.webp" alt="" width="40" height="50">
+      <p class="eyebrow">Monthly report | ${esc(r.label)}</p>
+      <h1>${esc(r.business_name)}</h1>
+      <p class="lede">Here's your month, ${esc(firstName(r.contact_name))}. Everything that happened on your site${r.sites.length > 1 ? 's' : ''}, including the bits you never see.</p>
+    </header>
+
+    <div class="stats four">
+      <div class="card stat"><b>${t.clicks != null ? nf(t.clicks) : '-'}</b><span>Visits from Google</span>${t.clicks != null ? change(t.clicks, t.clicks_prev).replace('4 weeks', 'month') : ''}</div>
+      <div class="card stat"><b>${nf(t.checks)}</b><span>Health checks</span></div>
+      <div class="card stat"><b>${t.jobs}</b><span>Jobs done</span></div>
+      <div class="card stat"><b>${t.log}</b><span>Behind the scenes</span></div>
+    </div>
+
+    ${r.sites.map((s) => `<section class="card">
+      <h2 class="site-title">${esc(hostOf(s.url))}</h2>
+      <dl class="facts">
+        <div><dt>Up time</dt><dd>${s.uptime != null ? `${s.uptime}%${s.downtime_mins ? `, about ${s.downtime_mins} minutes down in total` : ', not a single miss'}` : 'Monitoring started this month'}</dd></div>
+        <div><dt>Visits from Google</dt><dd>${s.google ? `${nf(s.google.clicks)}${s.google.prev ? ` (${nf(s.google.prev.clicks)} the month before)` : ''}${s.google.full ? '' : ', part month'}` : 'Being connected'}</dd></div>
+        <div><dt>Shown in searches</dt><dd>${s.google ? `${nf(s.google.impressions)} times` : '-'}</dd></div>
+        <div><dt>Speed on phones</dt><dd>${s.speed ? `${s.speed.score}/100` : 'First test this week'}</dd></div>
+        <div><dt>Protections</dt><dd>${s.protections_ok != null ? `${s.protections_ok} of ${s.protections_total} on` : 'Checked daily'}</dd></div>
+        ${s.domain_expires ? `<div><dt>Domain</dt><dd>Paid up to ${dateUK(s.domain_expires)}</dd></div>` : ''}
+      </dl>
+      ${s.top_searches.length ? `<p class="label mt16">Top searches</p><ul class="tags mt8">${s.top_searches.map((x) => `<li>${esc(x.key)}</li>`).join('')}</ul>` : ''}
+    </section>`).join('')}
+
+    <section class="card">
+      <h2>Jobs done</h2>
+      ${r.jobs.length ? `<ul class="log mt16">${r.jobs.map((j) => `<li><span class="log-kind">${dateUK(j.completed_at).replace(/ \d{4}$/, '')}</span><span class="grow"><b>${esc(j.title)}</b></span><span class="log-when">${j.logged_minutes ? duration(j.logged_minutes) : 'Free'}</span></li>`).join('')}</ul>`
+        : '<p class="muted mt8">No changes asked for this month. Your site just got on with it.</p>'}
+    </section>
+
+    <section class="card">
+      <h2>Behind the scenes</h2>
+      ${r.log.length ? `<ul class="log mt16">${r.log.map((l) => `<li><span class="log-kind">${esc(kindLabel[l.kind] || 'Work')}</span><span class="grow"><b>${esc(l.title)}</b>${l.body ? `<span class="log-body">${esc(l.body)}</span>` : ''}</span></li>`).join('')}</ul>`
+        : '<p class="muted mt8">Checks ran every 30 minutes all month.</p>'}
+      ${r.notes.length ? `<p class="label mt16">Security news this month</p><ul class="log mt8">${r.notes.map((n) => `<li><span class="grow"><b>${esc(n.title)}</b></span>${verdictPill(n.verdict)}</li>`).join('')}</ul>` : ''}
+    </section>
+
+    <section class="card night report-close">
+      <p class="eyebrow">From Jordan</p>
+      <p class="muted">Thanks for being with Sidedoor. If there's anything you want changed, added or looked at, it's one tap away in the app.</p>
+      <p class="sig">Jordan</p>
+      ${admin ? '' : '<a class="btn neon small no-print" href="#/refer">Know a business that needs this?</a>'}
+    </section>
+    <p class="faint report-foot">Sidedoor Digital · 98 King Street, Southport · getsidedoor.co.uk</p>
+  </article>`);
+  $('#print').onclick = () => window.print();
+}
+
+/* ---------- refer a business ---------- */
+async function referView() {
+  chrome('/account');
+  loading();
+  const { referrals, reward } = await api('/referrals');
+  const shareText = `I use Sidedoor Digital for my website and app. Jordan builds everything and looks after it properly. Worth a chat: https://getsidedoor.co.uk/?ref=${encodeURIComponent((state.client?.business_name || 'client').toLowerCase().replace(/[^a-z0-9]+/g, '-'))}`;
+  const STATUS = { new: 'Passed to Jordan', contacted: 'Jordan has been in touch', won: 'Now a Sidedoor client', not_now: 'Not right now' };
+  render(`<div class="stack">
+    <a class="faint" href="#/account">&larr; Account</a>
+    <p class="eyebrow">Refer a business</p>
+    <h1>Know someone who'd want this?</h1>
+    <p class="lede">Most of my work comes from people like you mentioning me. If you know a business that needs a site, an app, or just someone who answers, send them my way.${reward ? ` If they come on board, ${esc(reward)} as a thank you.` : ''}</p>
+    <button class="btn neon block" id="share">Send them a message</button>
+    <form class="card stack" id="f" novalidate>
+      <h3>Or pass on their details</h3>
+      <p class="faint">Jordan gets a ping straight away and mentions your name when he gets in touch.</p>
+      <div class="grid2"><div class="field"><label for="rn">Their name</label><input class="input" id="rn" name="name" required></div>
+        <div class="field"><label for="rb">Their business</label><input class="input" id="rb" name="business" required></div></div>
+      <div class="grid2"><div class="field"><label for="rp">Phone</label><input class="input" id="rp" name="phone" type="tel" inputmode="tel"></div>
+        <div class="field"><label for="re">Email</label><input class="input" id="re" name="email" type="email"></div></div>
+      <div class="field"><label for="rt">Anything useful to know</label><textarea class="input" id="rt" name="note" placeholder="e.g. Their booking system keeps falling over"></textarea></div>
+      <p class="error"></p><button class="btn block" type="submit">Pass it on</button>
+    </form>
+    ${referrals.length ? `<div class="section-title"><h2>Your referrals</h2></div><div class="list">${referrals.map((r) => `<div class="card tight row between"><h3 class="grow">${esc(r.business)}</h3><span class="pill ${r.status === 'won' ? 'done' : r.status === 'contacted' ? 'approved' : 'plain'}">${STATUS[r.status]}</span></div>`).join('')}</div>` : ''}
+  </div>`);
+  $('#share').onclick = async () => {
+    if (navigator.share) { try { await navigator.share({ text: shareText }); } catch {} return; }
+    try { await navigator.clipboard.writeText(shareText); toast('Message copied, paste it anywhere'); } catch { toast(shareText); }
+  };
+  onSubmit($('#f'), async (v, form) => { await api('/referrals', { method: 'POST', body: v }); form.reset(); toast('Thank you. Jordan has it.'); route(); });
+}
+
+async function leadsView() {
+  chrome('/');
+  loading();
+  const { referrals } = await api('/admin/referrals');
+  const opts = [['new', 'New'], ['contacted', 'Contacted'], ['won', 'Won'], ['not_now', 'Not now']];
+  render(`<div class="stack">
+    <a class="faint" href="#/">&larr; Today</a>
+    <p class="eyebrow">Leads</p>
+    <h1>From your clients</h1>
+    <p class="lede">Businesses your clients passed on. They see the status, so keep it up to date.</p>
+    <div class="list">${referrals.length ? referrals.map((r) => `<div class="card tight ${r.status === 'new' ? 'lit' : ''}">
+      <div class="row between"><h3 class="grow">${esc(r.business)}</h3><span class="faint">${ago(r.created_at)}</span></div>
+      <p class="muted">${esc(r.name)}${r.phone ? ` · <a href="tel:${esc(r.phone)}">${esc(r.phone)}</a>` : ''}${r.email ? ` · <a href="mailto:${esc(r.email)}">${esc(r.email)}</a>` : ''}</p>
+      ${r.note ? `<p class="faint">${esc(r.note)}</p>` : ''}
+      <p class="faint mt8">From ${esc(r.from_business || 'a client')}</p>
+      <div class="chips mt8">${opts.map(([k, l]) => `<button class="chip" data-id="${esc(r.id)}" data-s="${k}" aria-pressed="${r.status === k}">${l}</button>`).join('')}</div>
+    </div>`).join('') : emptyBlock(I.clients, 'No leads yet', 'Clients can pass on businesses from their Account page.')}</div>
+  </div>`);
+  $$('[data-s]').forEach((b) => (b.onclick = async () => {
+    try { await api('/admin/referrals', { method: 'PATCH', body: { id: b.dataset.id, status: b.dataset.s } }); route(); } catch (e) { toast(e.message, true); }
+  }));
+}
+
+/* ---------- polish: badges, count up ---------- */
+let badgeTimer = 0;
+async function refreshBadges() {
+  if (!state.user || state.user.must_change_password) return;
+  if (Date.now() - badgeTimer < 15000) return paintBadges();
+  badgeTimer = Date.now();
+  try { state.badges = await api('/badges'); } catch { state.badges = {}; }
+  paintBadges();
+}
+function paintBadges() {
+  const b = state.badges || {};
+  $$('#tabs a').forEach((a) => {
+    const n = b[a.getAttribute('href').slice(1)] || 0;
+    let el = $('.badge', a);
+    if (!n) { el?.remove(); return; }
+    if (!el) { el = document.createElement('span'); el.className = 'badge'; a.appendChild(el); }
+    el.textContent = n > 9 ? '9+' : n;
+  });
+}
+
+function countUp(root) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  $$('.stat b, .scenes b, .big', root).forEach((el) => {
+    const m = el.textContent.trim().match(/^([£]?)([\d,]+(?:\.\d+)?)(%?)$/);
+    if (!m) return;
+    const target = Number(m[2].replace(/,/g, ''));
+    if (!target || target > 1e7) return;
+    const dp = (m[2].split('.')[1] || '').length;
+    const start = performance.now(), dur = 700;
+    const tick = (now) => {
+      const k = Math.min(1, (now - start) / dur), e = 1 - Math.pow(1 - k, 3);
+      const v = target * e;
+      el.textContent = m[1] + (dp ? v.toFixed(dp) : Math.round(v).toLocaleString('en-GB')) + m[3];
+      if (k < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
 /* ---------- router ---------- */
 let cleanup = null;
 async function loadMe() {
@@ -1490,6 +1739,9 @@ const routes = [
   [/^\/gsc$/, gscView, 'admin'],
   [/^\/admin-ideas$/, adminIdeasView, 'admin'],
   [/^\/notes$/, adminNotesView, 'admin'],
+  [/^\/report$/, (m, q) => reportView(q), 'any'],
+  [/^\/refer$/, referView, 'client'],
+  [/^\/leads$/, leadsView, 'admin'],
   [/^\/clients\/new$/, newClientView, 'admin'],
   [/^\/clients\/([\w-]+)$/, (m) => clientDetailView(m[1]), 'admin'],
   [/^\/clients$/, adminClients, 'admin'],

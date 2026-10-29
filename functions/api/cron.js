@@ -3,10 +3,12 @@
 //   ?job=uptime            every 30 minutes, is each site up
 //   ?job=health            daily, padlock, certificate, security headers, domain renewal (a few sites per call)
 //   ?job=analytics         daily, Search Console numbers (a few sites per call)
+//   ?job=speed             daily, PageSpeed for sites not tested this week (two per call)
 import { json, HttpError, now } from '../../lib/http.js';
-import { generateMonthly, sendInvoice, listInvoices, settings, currentPeriod, ukDay } from '../../lib/billing.js';
+import { generateMonthly, sendInvoice, listInvoices, settings, currentPeriod, ukDay, monthName } from '../../lib/billing.js';
+import { lastFullMonth } from '../../lib/report.js';
 import { notify } from '../../lib/notify.js';
-import { uptimeRun, deepCheckDue } from '../../lib/health.js';
+import { uptimeRun, deepCheckDue, speedDue } from '../../lib/health.js';
 import { syncDue } from '../../lib/google.js';
 
 function safeEqual(a, b) {
@@ -23,6 +25,7 @@ export async function onRequestPost({ request, env }) {
   if (job === 'uptime') return json(await uptimeRun(env));
   if (job === 'health') return json(await deepCheckDue(env, env.APP_ORIGIN || url.origin));
   if (job === 'analytics') return json(await syncDue(env));
+  if (job === 'speed') return json(await speedDue(env));
   if (job !== 'daily') throw new HttpError(400, 'Unknown job');
   const force = url.searchParams.get('force') === 'monthly'; // for testing
   const report = { period: currentPeriod(), created: [], sent: [], reminded: [] };
@@ -35,6 +38,18 @@ export async function onRequestPost({ request, env }) {
         try { await sendInvoice(env, d.id); report.sent.push(d.ref); } catch (e) { report.sent.push(`${d.ref} failed: ${e.message}`); }
       }
     }
+    // Monthly reports are ready for last month.
+    const { results: users } = await env.DB.prepare(
+      "SELECT u.id FROM users u JOIN clients c ON c.id = u.client_id WHERE c.archived = 0 AND u.role = 'client' AND EXISTS (SELECT 1 FROM sites s WHERE s.client_id = c.id)"
+    ).all();
+    if (users.length) {
+      await notify(env, { userIds: users.map((u) => u.id) }, {
+        title: `Your ${monthName(lastFullMonth())} report is in`,
+        body: 'Visits from Google, checks, fixes and everything done behind the scenes.',
+        url: '/#/report'
+      });
+    }
+    report.reports_sent = users.length;
     const waiting = (await listInvoices(env, { statuses: ['draft'] })).length;
     if (waiting) {
       await notify(env, { admins: true }, {
