@@ -113,17 +113,13 @@ function chrome(active, opts = {}) {
   refreshBadges();
 }
 
+// Draws a screen. Always synchronous: the code after render() wires up buttons and needs them to exist.
+// The fade in comes from CSS (.fade-in), so there's still a smooth change between screens.
 function render(html) {
-  const paint = () => {
-    view.innerHTML = `<div class="fade-in">${html}</div>`;
-    $$('[data-w]', view).forEach((el) => (el.style.width = `${Math.min(100, Number(el.dataset.w) || 0)}%`));
-    window.scrollTo(0, 0);
-  };
-  const real = !html.includes('class="skeleton"');
-  if (real && document.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches && view.dataset.painted) {
-    document.startViewTransition(paint);
-  } else paint();
-  if (real) { view.dataset.painted = '1'; countUp(view); }
+  view.innerHTML = `<div class="fade-in">${html}</div>`;
+  $$('[data-w]', view).forEach((el) => (el.style.width = `${Math.min(100, Number(el.dataset.w) || 0)}%`));
+  window.scrollTo(0, 0);
+  if (!html.includes('class="skeleton"')) countUp(view);
 }
 const loading = () => render('<div class="stack"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>');
 

@@ -416,7 +416,6 @@ h2.site-title,h3.site-title{overflow-wrap:anywhere}
 /* Little things */
 .glyph{color:var(--ink)}
 .card.tight.row .glyph{margin-left:auto}
-::view-transition-old(root),::view-transition-new(root){animation-duration:.28s}
 
 @media print{
   @page{margin:14mm}
