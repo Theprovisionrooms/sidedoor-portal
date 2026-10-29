@@ -265,8 +265,10 @@ async function clientHome() {
   const d = await api('/home');
   const site = d.sites[0];
   const needOk = d.open_requests.filter((r) => r.status === 'quoted');
-  let bills = null, ideas = [], scenes = null, refs = null, net = null;
+  let bills = null, ideas = [], scenes = null, refs = null, net = null, mem = null, ups = [];
   await Promise.all([
+    api('/member').then((r) => (mem = r)).catch(() => {}),
+    api('/updates').then((r) => (ups = r.updates)).catch(() => {}),
     api('/referrals').then((r) => (refs = r)).catch(() => {}),
     api('/network').then((r) => (net = r)).catch(() => {}),
     api('/billing').then((b) => (bills = b)).catch(() => {}),
@@ -277,6 +279,8 @@ async function clientHome() {
   render(`<div class="stack">
     <p class="eyebrow">${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
     <h1>${greeting()}, ${esc(firstName(state.user.name))}.</h1>
+    ${mem?.member && Date.now() - Date.parse(mem.member.since) < 14 * 864e5 ? `<p class="lede">Welcome to Sidedoor. You're member No. ${esc(mem.member.number_label)}.</p>${membershipCard(mem.member)}` : ''}
+    ${ups.find((u) => u.unread) ? updateCard(ups.find((u) => u.unread), true) : ''}
     ${needOk.length ? `<a class="card night" href="#/requests/${esc(needOk[0].id)}">
         <p class="eyebrow">Needs your OK</p><h2>${esc(needOk[0].title)}</h2>
         <p class="muted">${duration(needOk[0].quoted_minutes)} · ${money(needOk[0].quoted_pence)}. Tap to approve.</p>
@@ -299,6 +303,7 @@ async function clientHome() {
       <div class="row between"><span class="eyebrow">Behind the scenes</span><span class="faint">This month</span></div>
       <div class="scenes mt16"><div><b>${nf(scenes.checks_30d)}</b><span>Checks</span></div><div><b>${scenes.health.filter((h) => h.protections).reduce((t, h) => t + h.protections_ok, 0)}/${scenes.health.filter((h) => h.protections).reduce((t, h) => t + h.protections_total, 0) || '-'}</b><span>Protections</span></div><div><b>${scenes.analytics.find((a) => a.has_data) ? nf(scenes.analytics.reduce((t, a) => t + (a.now?.clicks || 0), 0)) : '-'}</b><span>Google visits</span></div></div>
       ${scenes.log[0] ? `<p class="faint mt16">Latest: ${esc(scenes.log[0].title)}, ${ago(scenes.log[0].created_at)}</p>` : ''}</a>` : ''}
+    ${mem?.tip ? tipCard(mem.tip) : ''}
     ${new Date().getDate() <= 10 && scenes ? `<a class="card lit" href="#/report"><p class="eyebrow">New</p><h3 class="mt8">Your ${esc(new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() - 1, 1)).toLocaleDateString('en-GB', { month: 'long', timeZone: 'UTC' }))} report is in</h3><p class="faint mt8">Tap to see your month.</p></a>` : ''}
     ${ideas.length ? `<div class="section-title"><h2>Ideas for right now</h2><a class="faint" href="#/ideas">All ideas</a></div><div class="list" id="ideas">${ideas.slice(0, 2).map((i) => ideaCard(i, d.client.hourly_rate_pence)).join('')}</div>` : ''}
     <div class="section-title"><h2>On the go</h2><a class="faint" href="#/requests">See all</a></div>
@@ -487,7 +492,7 @@ async function adminToday() {
       <p class="eyebrow">Sites to look at</p>
       <ul class="watch mt8">${d.watch.map((w) => `<li class="${w.level}"><a href="#/clients/${esc(w.client_id)}"><b>${esc(w.site)}</b> <span>${esc(w.text)}</span></a></li>`).join('')}</ul></div>`
       : d.sites_count ? `<div class="card tight row"><i class="led on"></i><span class="grow">All ${d.sites_count} sites up and protected.</span></div>` : ''}
-    <div class="tools"><a class="chip" href="#/intros">Network</a><a class="chip" href="#/leads">Leads</a><a class="chip" href="#/admin-ideas">Ideas library</a><a class="chip" href="#/notes">Security news</a><a class="chip" href="#/gsc">Search Console</a></div>
+    <div class="tools"><a class="chip" href="#/updates-admin">Post an update</a><a class="chip" href="#/intros">Network</a><a class="chip" href="#/leads">Leads</a><a class="chip" href="#/admin-ideas">Ideas library</a><a class="chip" href="#/notes">Security news</a><a class="chip" href="#/gsc">Search Console</a></div>
     ${block('Needs a quote', d.needs_quote, 'Nothing new.')}
     ${block('To do', d.to_do, 'Nothing approved and waiting.')}
     ${block('Waiting on client', d.waiting_on_client, 'No quotes out.')}
@@ -562,6 +567,8 @@ Temporary password: ${l.temp_password}
 
 It'll ask you to pick your own password the first time. Then add it to your home screen and it sits there like a normal app.
 
+While you're in, have a look at your membership card under More, and pop yourself in the Network tab. It's where Sidedoor businesses find each other and share perks.
+
 Any problems, just shout.
 Jordan`;
 }
@@ -620,7 +627,7 @@ async function clientDetailView(id) {
     <h1>${esc(c.business_name)}</h1>
     <p class="lede">${esc(c.contact_name)}${c.phone ? ` · <a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : ''} · ${money(c.hourly_rate_pence)}/hr</p>
     <div class="row"><a class="btn neon grow" href="#/requests/new?client=${esc(c.id)}">Log a request for them</a><a class="btn ghost" href="#/site?client=${esc(c.id)}">Their view</a></div>
-    <a class="faint" href="#/report?client=${esc(c.id)}">Their monthly report</a>
+    <div class="row wrap"><a class="faint" href="#/report?client=${esc(c.id)}">Their monthly report</a><a class="faint" href="#/member?client=${esc(c.id)}">Their membership and milestones</a></div>
 
     <div class="section-title"><h2>Sites</h2></div>
     <div class="list">${d.sites.map((s) => {
@@ -1881,17 +1888,20 @@ async function introsAdminView() {
 async function moreView() {
   chrome('/account');
   loading();
-  const [bills, refs, net] = await Promise.all([api('/billing').catch(() => null), api('/referrals').catch(() => null), api('/network').catch(() => null)]);
+  const [bills, refs, net, mem] = await Promise.all([api('/billing').catch(() => null), api('/referrals').catch(() => null), api('/network').catch(() => null), api('/member').catch(() => null)]);
   const u = state.user;
   render(`<div class="stack">
     <p class="eyebrow">More</p>
     <h1>${esc(firstName(u.name))}</h1>
     <p class="lede">${esc(state.client?.business_name || '')}</p>
+    ${mem?.member ? `${membershipCard(mem.member)}<a class="card tight row" href="#/member"><span class="grow"><h3>Milestones</h3><span class="faint block">${mem.member.unlocked} of ${mem.member.milestones.length} unlocked</span></span><span class="mono">${Math.round((mem.member.unlocked / mem.member.milestones.length) * 100)}%</span></a>` : ''}
     ${referCard(refs)}
     <div class="list">
       <a class="card tight row" href="#/billing"><span class="grow"><h3>Billing</h3><span class="faint block">${bills ? (bills.outstanding_pence ? `${money(bills.outstanding_pence)} to pay` : 'All paid up') : ''}</span></span>${bills?.outstanding_pence ? '<span class="pill quoted">Due</span>' : ''}</a>
       <a class="card tight row" href="#/report"><span class="grow"><h3>Monthly report</h3><span class="faint block">Your month on one page</span></span></a>
       <a class="card tight row" href="#/network/profile"><span class="grow"><h3>Network profile</h3><span class="faint block">${net?.profile.visible ? 'Live in the Sidedoor network' : 'Not in the network yet'}</span></span></a>
+      <a class="card tight row" href="#/updates"><span class="grow"><h3>Updates from Jordan</h3><span class="faint block">What's new at Sidedoor</span></span></a>
+      <a class="card tight row" href="#/tips"><span class="grow"><h3>Tips</h3><span class="faint block">A new one every Monday</span></span></a>
       <a class="card tight row" href="#/ideas"><span class="grow"><h3>Ideas for your site</h3><span class="faint block">Picked for the time of year</span></span></a>
     </div>
     <div class="section-title"><h2>Settings</h2></div>
@@ -1926,6 +1936,128 @@ function referCard(refs) {
   </a>`;
 }
 
+/* ---------- membership ---------- */
+function membershipCard(m, link = true) {
+  const since = new Date(m.since).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+  const tag = link ? 'a' : 'div';
+  return `<${tag} class="member-card" ${link ? 'href="#/member"' : ''} aria-label="Sidedoor member number ${esc(m.number_label)}">
+    <div class="mc-top"><img src="/assets/art/door-mark.webp" alt="" width="34" height="43"><img class="mc-wm" src="/assets/brand/wm-sidedoor-light.webp" alt="Sidedoor" width="150" height="14"></div>
+    <div class="mc-no"><span>Member</span><b>No. ${esc(m.number_label)}</b></div>
+    <div class="mc-foot"><div><span>Business</span><b>${esc(m.business_name)}</b></div><div><span>Since</span><b>${esc(since)}</b></div></div>
+  </${tag}>`;
+}
+
+async function memberView(query) {
+  const admin = state.user.role === 'admin';
+  const clientId = query.get('client') || '';
+  chrome(admin ? '/clients' : '/account');
+  loading();
+  const { member: m } = await api(`/member${admin ? `?client=${encodeURIComponent(clientId)}` : ''}`);
+  const s = m.stats;
+  render(`<div class="stack">
+    <a class="faint" href="#${admin ? `/clients/${esc(clientId)}` : '/account'}">&larr; Back</a>
+    <p class="eyebrow">Your Sidedoor</p>
+    <h1>Part of the family.</h1>
+    <p class="lede">${m.months ? `${m.months} month${m.months === 1 ? '' : 's'} with Sidedoor.` : 'New through the side door.'} Here's everything so far.</p>
+    ${membershipCard(m, false)}
+    <div class="stats four">
+      <div class="card stat"><b>${s.jobs}</b><span>Changes done</span></div>
+      <div class="card stat"><b>${nf(s.google)}</b><span>Google visits tracked</span></div>
+      <div class="card stat"><b>${nf(s.checks_30d)}</b><span>Checks this month</span></div>
+      <div class="card stat"><b>${s.intros}</b><span>Network intros</span></div>
+    </div>
+    <div class="section-title"><h2>Milestones</h2><span class="faint">${m.unlocked} of ${m.milestones.length}</span></div>
+    <div class="bar"><i data-w="${Math.round((m.unlocked / m.milestones.length) * 100)}"></i></div>
+    <div class="milestones">${m.milestones.map((x) => `<div class="ms ${x.got ? 'got' : ''}">
+      <i aria-hidden="true">${x.got ? '✓' : ''}</i><b>${esc(x.title)}</b><span>${esc(x.hint)}</span><span class="sr-only">${x.got ? 'Unlocked' : 'Not yet'}</span></div>`).join('')}</div>
+  </div>`);
+}
+
+/* ---------- updates from Jordan ---------- */
+function updateCard(u, compact = false) {
+  const link = u.link_url && u.link_label
+    ? `<a class="btn ${compact ? 'neon small' : 'small'} mt16" href="${esc(u.link_url)}" ${u.link_url.startsWith('http') ? 'target="_blank" rel="noopener"' : ''}>${esc(u.link_label)}</a>` : '';
+  return `<div class="card update ${u.unread ? 'lit' : ''}" data-update="${esc(u.id)}">
+    <div class="row between"><span class="eyebrow">From Jordan</span><span class="faint">${ago(u.created_at)}</span></div>
+    <h3 class="mt8">${esc(u.title)}</h3>
+    <p class="muted mt8 pre">${esc(compact && u.body.length > 220 ? u.body.slice(0, 217) + '...' : u.body)}</p>
+    ${link}
+    ${compact ? '<div class="row wrap mt8"><a class="linkish" href="#/updates">All updates</a></div>' : ''}
+  </div>`;
+}
+
+async function updatesView() {
+  chrome('/');
+  loading();
+  const { updates } = await api('/updates');
+  render(`<div class="stack">
+    <a class="faint" href="#/">&larr; Home</a>
+    <p class="eyebrow">Updates</p>
+    <h1>From Jordan</h1>
+    <p class="lede">What's new in the app, what's happening at Sidedoor, and anything you should know.</p>
+    <div class="list">${updates.length ? updates.map((u) => updateCard(u)).join('') : emptyBlock(I.inbox, 'Nothing yet', 'Updates from Jordan show up here.')}</div>
+  </div>`);
+  if (updates.some((u) => u.unread)) api('/updates', { method: 'POST', body: { all: true } }).then(() => { badgeTimer = 0; refreshBadges(); }).catch(() => {});
+}
+
+/* ---------- tip of the week ---------- */
+function tipCard(t) {
+  const action = t.action
+    ? `<a class="btn ghost small mt16" href="#/requests/new?title=${encodeURIComponent(t.action.title)}">${esc(t.action.label)}</a>`
+    : t.link ? `<a class="btn ghost small mt16" href="${esc(t.link.url)}">${esc(t.link.label)}</a>` : '';
+  return `<div class="card tip-card">
+    <div class="row between"><span class="eyebrow">Tip of the week</span><a class="faint" href="#/tips">More tips</a></div>
+    <h3 class="mt8">${esc(t.title)}</h3>
+    <p class="muted mt8">${esc(t.body)}</p>
+    ${action}
+  </div>`;
+}
+
+async function tipsView() {
+  chrome('/');
+  loading();
+  const { tips } = await api('/member?tips=1');
+  render(`<div class="stack">
+    <a class="faint" href="#/">&larr; Home</a>
+    <p class="eyebrow">Tips</p>
+    <h1>Small things that work.</h1>
+    <p class="lede">A new one every Monday, from years of working in and around venues and shops.</p>
+    <div class="list">${tips.map((t, i) => `<div class="card ${i ? '' : 'lit'}">${i ? '' : '<p class="eyebrow">This week</p>'}<h3 class="${i ? '' : 'mt8'}">${esc(t.title)}</h3><p class="muted mt8">${esc(t.body)}</p>
+      ${t.action ? `<a class="linkish" href="#/requests/new?title=${encodeURIComponent(t.action.title)}">${esc(t.action.label)}</a>` : t.link ? `<a class="linkish" href="${esc(t.link.url)}">${esc(t.link.label)}</a>` : ''}</div>`).join('')}</div>
+  </div>`);
+}
+
+/* ---------- admin: post updates ---------- */
+async function updatesAdminView() {
+  chrome('/');
+  loading();
+  const [{ updates, client_users }, { clients }] = await Promise.all([api('/admin/updates'), api('/admin/clients')]);
+  render(`<div class="stack">
+    <a class="faint" href="#/">&larr; Today</a>
+    <p class="eyebrow">Updates</p>
+    <h1>Post an update</h1>
+    <p class="lede">Shows on every client's Home with a badge until they've read it. New features, Christmas hours, a thank you, anything that makes them feel in the loop.</p>
+    <form class="card stack" id="f" novalidate>
+      <div class="field"><label for="ut">Title</label><input class="input" id="ut" name="title" required placeholder="New: the Sidedoor network"></div>
+      <div class="field"><label for="ub">Message</label><textarea class="input" id="ub" name="body" required placeholder="Write it like a message to a mate."></textarea></div>
+      <div class="grid2"><div class="field"><label for="ul">Button text (optional)</label><input class="input" id="ul" name="link_label" placeholder="Take a look"></div>
+        <div class="field"><label for="uu">Button goes to</label><select class="input" id="uu" name="link_url"><option value="">No button</option>
+          <option value="#/network">The network</option><option value="#/ideas">Ideas</option><option value="#/refer">Refer a mate</option><option value="#/report">Monthly report</option><option value="#/site">My site</option><option value="#/requests/new">Ask for a change</option><option value="#/member">Membership</option></select></div></div>
+      <div class="field"><label for="uc">Who sees it</label><select class="input" id="uc" name="client_id"><option value="">Every client</option>${clients.filter((c) => !c.archived).map((c) => `<option value="${esc(c.id)}">${esc(c.business_name)}</option>`).join('')}</select></div>
+      <label class="check"><input type="checkbox" name="notify" value="1" checked> Ping their phones</label>
+      <p class="error"></p><button class="btn neon" type="submit">Post update</button>
+    </form>
+    <div class="section-title"><h2>Posted</h2><span class="faint">${client_users} client logins</span></div>
+    <div class="list">${updates.map((u) => `<div class="card tight"><div class="row between"><h3 class="grow">${esc(u.title)}</h3><span class="faint">${ago(u.created_at)}</span></div>
+      <p class="faint mt8">${esc(u.business_name || 'Everyone')} · read by ${u.reads}</p><button class="linkish" data-del="${esc(u.id)}">Delete</button></div>`).join('') || '<p class="faint">Nothing posted yet.</p>'}</div>
+  </div>`);
+  onSubmit($('#f'), async (v) => { v.notify = !!v.notify; await api('/admin/updates', { method: 'POST', body: v }); toast('Posted'); route(); });
+  $$('[data-del]').forEach((b) => (b.onclick = async () => {
+    if (!confirm('Delete this update?')) return;
+    await api(`/admin/updates?id=${encodeURIComponent(b.dataset.del)}`, { method: 'DELETE' }); route();
+  }));
+}
+
 /* ---------- router ---------- */
 let cleanup = null;
 async function loadMe() {
@@ -1958,6 +2090,10 @@ const routes = [
   [/^\/network$/, (m, q) => networkView(q), 'client'],
   [/^\/network\/profile$/, networkProfileView, 'client'],
   [/^\/intros$/, introsAdminView, 'admin'],
+  [/^\/member$/, (m, q) => memberView(q), 'any'],
+  [/^\/updates$/, updatesView, 'client'],
+  [/^\/tips$/, tipsView, 'any'],
+  [/^\/updates-admin$/, updatesAdminView, 'admin'],
   [/^\/clients\/new$/, newClientView, 'admin'],
   [/^\/clients\/([\w-]+)$/, (m) => clientDetailView(m[1]), 'admin'],
   [/^\/clients$/, adminClients, 'admin'],

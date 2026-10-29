@@ -145,6 +145,20 @@ Clients and you switch them on from the Home nudge or Account. On iPhone they on
 1. `npx.cmd wrangler d1 migrations apply sidedoor-portal --remote`
 2. Push. That's it.
 
+## Stage 6: membership, milestones, updates, tips
+
+### What's new
+- **Membership card**: every client is a numbered Sidedoor member ("No. 004, since October 2026"), shown on Home for their first two weeks and at the top of More.
+- **Milestones**: 15 to unlock, from "First change" and "Ton up" (100 Google visits) to "Connector", "Bringer" and "One year in". Worked out live from what actually happens.
+- **Updates from Jordan**: Today > Post an update. Goes to everyone or one client, with an optional button and phone ping. Unread updates show on their Home with a badge on the Home tab.
+- **Tip of the week**: 26 practical tips that rotate every Monday, several with a one-tap "do this for me" request. Archive at Tips.
+- **Welcome message** now points new clients at their membership card and the network.
+- **Fix**: tabs could fail until a refresh because of the page animation. Pages now draw instantly with a CSS fade.
+
+### One-time setup
+1. `npx.cmd wrangler d1 migrations apply sidedoor-portal --remote`
+2. Push.
+
 ## Coming next
 
 - Ideas for E. Bartlett once her two sites are built.

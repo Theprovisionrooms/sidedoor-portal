@@ -13,12 +13,16 @@ export async function onRequestGet(ctx) {
     ]);
     return json({ '/': r.n + l.n + n.n, '/money': m.n });
   }
-  const [q, i, n] = await Promise.all([
+  const [q, i, n, u] = await Promise.all([
     db.prepare("SELECT COUNT(*) AS n FROM requests WHERE client_id = ? AND status = 'quoted'").bind(user.client_id).first(),
     db.prepare("SELECT COUNT(*) AS n FROM invoices WHERE client_id = ? AND status = 'sent' AND claimed_paid_at IS NULL").bind(user.client_id).first(),
     db.prepare(
       "SELECT COUNT(*) AS n FROM network_intros WHERE (from_client = ? AND seen_from = 0) OR (to_client = ? AND status = 'introduced' AND seen_to = 0)"
-    ).bind(user.client_id, user.client_id).first()
+    ).bind(user.client_id, user.client_id).first(),
+    db.prepare(
+      `SELECT COUNT(*) AS n FROM updates u WHERE (u.client_id IS NULL OR u.client_id = ?)
+         AND NOT EXISTS (SELECT 1 FROM update_reads r WHERE r.update_id = u.id AND r.user_id = ?)`
+    ).bind(user.client_id, user.id).first()
   ]);
-  return json({ '/requests': q.n, '/account': i.n, '/network': n.n });
+  return json({ '/': u.n, '/requests': q.n, '/account': i.n, '/network': n.n });
 }
