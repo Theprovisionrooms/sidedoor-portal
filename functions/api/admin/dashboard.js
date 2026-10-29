@@ -1,4 +1,5 @@
 import { json, requireAdmin } from '../../../lib/http.js';
+import { checkSchema } from '../../../lib/schema.js';
 import { listRequests } from '../../../lib/requests.js';
 
 export async function onRequestGet(ctx) {
@@ -50,6 +51,7 @@ export async function onRequestGet(ctx) {
     month: { jobs: doneThisMonth.length, minutes, earned_pence: earned },
     client_count: clients,
     watch: grouped,
+    system_ok: (await checkSchema(ctx.env, { repair: true })).ok && !!(ctx.env.VAPID_PUBLIC_KEY && ctx.env.VAPID_PRIVATE_KEY && ctx.env.CRON_SECRET),
     sites_count: sites.length
   });
 }

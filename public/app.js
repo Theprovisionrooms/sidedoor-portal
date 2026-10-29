@@ -249,7 +249,7 @@ function accountView() {
     <p class="lede">${esc(u.email)}${state.client ? ` · ${esc(state.client.business_name)}` : ''}</p>
     <a class="card tight" href="#/password-change"><h3>Change password</h3><p class="faint">Signs you out on other devices</p></a>
     <div class="card tight row" id="pushrow"><div class="grow"><h3>Phone notifications</h3><p class="faint" id="pushst">Checking...</p></div><span id="pushbtns"></span></div>
-    ${u.role === 'client' ? `<a class="card tight" href="#/refer"><h3>Refer a business</h3><p class="faint">Know someone who needs a site or an app?</p></a>` : `<a class="card tight" href="#/leads"><h3>Leads</h3><p class="faint">Businesses your clients have passed on</p></a><a class="card tight" href="#/intros"><h3>Sidedoor network</h3><p class="faint">Members and intro requests</p></a>`}
+    ${u.role === 'client' ? `<a class="card tight" href="#/refer"><h3>Refer a business</h3><p class="faint">Know someone who needs a site or an app?</p></a>` : `<a class="card tight" href="#/leads"><h3>Leads</h3><p class="faint">Businesses your clients have passed on</p></a><a class="card tight" href="#/intros"><h3>Sidedoor network</h3><p class="faint">Members and intro requests</p></a><a class="card tight" href="#/system"><h3>System check</h3><p class="faint">Database, secrets, timer, Google</p></a>`}
     ${u.role === 'client' ? `<div class="card tight"><h3>Talk to Jordan</h3><p class="muted">For anything about your site, use <a href="#/requests/new">a request</a> so it's all kept in one place. Something urgent and the site's down? Mark the request as urgent and I'll see it straight away.</p></div>` : ''}
     <button class="btn ghost block" id="out">Log out</button>
     <p class="faint">Sidedoor Digital · 98 King Street, Southport · getsidedoor.co.uk</p>
@@ -487,6 +487,7 @@ async function adminToday() {
       <div class="card stat"><b>${d.client_count}</b><span>Clients</span></div>
     </div>
     <div class="row"><a class="btn neon grow" href="#/clients/new">Add client</a><a class="btn ghost" href="#/requests/new">Log request</a></div>
+    ${d.system_ok === false ? `<a class="card night" href="#/system"><p class="eyebrow">System check</p><h3 class="mt8">Something needs setting up</h3><p class="muted mt8">Tap to see what, and exactly how to fix it.</p></a>` : ''}
     ${pushNudge()}
     ${d.watch.length ? `<div class="card ${d.watch.some((w) => w.level === 'bad') ? 'night' : ''}">
       <p class="eyebrow">Sites to look at</p>
@@ -718,7 +719,7 @@ async function clientDetailView(id) {
 // Pre-filled with everyone Jordan has built for. Fill in emails and missing addresses.
 const IMPORT_SEED = [
   { business_name: 'Candymonium', monthly: '40', users: [{ name: 'Anthony', email: '' }], sites: [{ name: 'Candymonium', url: 'candymonium.co.uk' }] },
-  { business_name: "Digz N' Lidz", monthly: '47', users: [{ name: 'Mark', email: '' }, { name: 'Danny', email: '' }], sites: [{ name: "Digz N' Lidz", url: 'digznlidz.co.uk' }] },
+  { business_name: "Digz N' Lidz", monthly: '47', users: [{ name: 'Mark and Danny', email: '' }], sites: [{ name: "Digz N' Lidz", url: 'digznlidz.co.uk' }] },
   { business_name: 'WATAG', monthly: '40', users: [{ name: 'Jay', email: '' }], sites: [{ name: 'WATAG', url: 'watagapp.co.uk' }] },
   { business_name: 'Rubies & Pearls', monthly: '20', users: [{ name: 'Ruby', email: '' }], sites: [{ name: 'Rubies & Pearls', url: 'www.rubiesandpearls.co.uk' }] },
   { business_name: 'Dougie Joyce', monthly: '50', users: [{ name: 'Dougie', email: '' }], sites: [
@@ -726,7 +727,7 @@ const IMPORT_SEED = [
     { name: '3D Fight Club', url: 'www.3dfc.tv' },
     { name: 'Elite Force', url: 'eliteforce.site' }] },
   // Build starts 4 Nov, about 3 weeks, so the plan starts in December. Half the build now, half when live.
-  { business_name: 'E. Bartlett', monthly: '40', from: '2026-12', build: '475', paid: '0', users: [{ name: '', email: '' }],
+  { business_name: 'E. Bartlett', monthly: '40', from: '2026-12', build: '475', paid: '0', users: [{ name: 'Elysse', email: '' }],
     sites: [{ name: 'Portaloo hire', url: '' }, { name: 'Exhibition', url: '' }] },
   { business_name: 'Growing with Chaos', on: false, users: [{ name: '', email: '' }], sites: [{ name: 'Growing with Chaos', url: '' }] }
 ];
@@ -2058,6 +2059,27 @@ async function updatesAdminView() {
   }));
 }
 
+/* ---------- admin: system check ---------- */
+async function systemView() {
+  chrome('/account');
+  loading();
+  const d = await api('/admin/system?google=1');
+  const groups = [...new Set(d.checks.map((c) => c.group))];
+  const bad = d.checks.filter((c) => !c.ok && c.level === 'bad').length;
+  render(`<div class="stack">
+    <a class="faint" href="#/account">&larr; Account</a>
+    <p class="eyebrow">System check</p>
+    <h1>${bad ? `${bad} thing${bad === 1 ? '' : 's'} to fix.` : 'All systems go.'}</h1>
+    <p class="lede">Everything the app needs, checked live. ${d.schema.repaired.length ? `Fixed just now: ${esc(d.schema.repaired.join(', '))}.` : ''}</p>
+    ${groups.map((g) => `<div class="section-title"><h2>${esc(g)}</h2></div>
+      <div class="card"><ul class="checks">${d.checks.filter((c) => c.group === g).map((c) => `<li class="${c.ok ? 'ok' : 'todo'}"><i aria-hidden="true">${c.ok ? '✓' : c.level === 'info' ? 'i' : '!'}</i>
+        <span><b>${esc(c.label)}</b>${c.fix ? `<span class="faint block">${esc(c.fix)}</span>` : ''}</span></li>`).join('')}</ul></div>`).join('')}
+    <p class="faint">Database updates applied: ${esc(d.schema.applied.join(', ') || 'none recorded')}. Latest is ${esc(d.schema.latest)}. Running at ${esc(d.origin)}.</p>
+    <button class="btn ghost block" id="again">Check again</button>
+  </div>`);
+  $('#again').onclick = () => route();
+}
+
 /* ---------- router ---------- */
 let cleanup = null;
 async function loadMe() {
@@ -2094,6 +2116,7 @@ const routes = [
   [/^\/updates$/, updatesView, 'client'],
   [/^\/tips$/, tipsView, 'any'],
   [/^\/updates-admin$/, updatesAdminView, 'admin'],
+  [/^\/system$/, systemView, 'admin'],
   [/^\/clients\/new$/, newClientView, 'admin'],
   [/^\/clients\/([\w-]+)$/, (m) => clientDetailView(m[1]), 'admin'],
   [/^\/clients$/, adminClients, 'admin'],

@@ -159,6 +159,13 @@ Clients and you switch them on from the Home nudge or Account. On iPhone they on
 1. `npx.cmd wrangler d1 migrations apply sidedoor-portal --remote`
 2. Push.
 
+## System check and self-repair
+
+- **Account > System check** (or the warning card on Today) checks the database, secrets, the timer and Google, live, with the exact fix for anything missing.
+- The app checks its own database on start-up. If an update was applied from an older copy and left a field out, it adds the field itself. It never runs an update you haven't applied.
+- Temporary passwords use a lighter hash so a big import stays inside Cloudflare's CPU allowance. Passwords people choose still use the full 100,000 rounds.
+- Automated addresses (like Google Docs reply addresses) are rejected at import, since nobody would get the login.
+
 ## Coming next
 
 - Ideas for E. Bartlett once her two sites are built.

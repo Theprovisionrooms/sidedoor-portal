@@ -1,5 +1,6 @@
 import { getSessionUser } from '../../lib/auth.js';
 import { json } from '../../lib/http.js';
+import { ensureSchemaOnce } from '../../lib/schema.js';
 
 export async function onRequest(ctx) {
   const { request, env } = ctx;
@@ -13,6 +14,7 @@ export async function onRequest(ctx) {
   }
 
   try {
+    await ensureSchemaOnce(env);
     ctx.data.user = await getSessionUser(request, env);
     return await ctx.next();
   } catch (e) {
