@@ -9,7 +9,10 @@ export async function onRequestGet(ctx) {
     ctx.env.DB.prepare('SELECT business, status, created_at FROM referrals WHERE client_id = ? ORDER BY created_at DESC').bind(user.client_id).all(),
     ctx.env.DB.prepare("SELECT value FROM settings WHERE key = 'referral_reward'").first()
   ]);
-  return json({ referrals: results, reward: reward?.value || '' });
+  return json({
+    referrals: results, reward: reward?.value || '',
+    passed: results.length, won: results.filter((r) => r.status === 'won').length
+  });
 }
 
 export async function onRequestPost(ctx) {

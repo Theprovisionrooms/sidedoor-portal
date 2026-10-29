@@ -1,6 +1,6 @@
 // Sidedoor Portal service worker. Network first so new deploys show straight away;
 // the cached shell only steps in when there's no signal.
-const CACHE = 'sidedoor-shell-v3';
+const CACHE = 'sidedoor-shell-v4';
 const SHELL = ['/', '/index.html', '/app.js', '/styles.css', '/manifest.webmanifest', '/assets/art/door-mark.webp', '/assets/brand/wm-sidedoor-ink.webp',
   '/assets/art/city-sm.webp', '/assets/fonts/syne.woff2', '/assets/fonts/michroma.woff2', '/assets/fonts/zen-kaku.woff2'];
 
@@ -17,7 +17,8 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin || url.pathname.startsWith('/api/')) return;
   e.respondWith(
-    fetch(e.request)
+    // no-cache: always ask the server if there's something newer, never trust the browser's copy
+    fetch(e.request, { cache: 'no-cache' })
       .then((res) => {
         if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); }
         return res;

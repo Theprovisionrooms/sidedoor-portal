@@ -430,3 +430,18 @@ h2.site-title,h3.site-title{overflow-wrap:anywhere}
   .stats.four{grid-template-columns:repeat(4,1fr)}
   a{text-decoration:none}
 }
+
+/* ---------- Stage 5: network, more, referrals ---------- */
+.mono-badge{flex:none;width:46px;height:46px;display:grid;place-items:center;background:var(--ink);color:var(--paper);font:400 .78rem/1 var(--wide);letter-spacing:.06em;box-shadow:inset 0 -2px 0 var(--pink),0 0 12px -4px rgba(255,61,127,.6)}
+.member h3{margin:0}
+.perk{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;font-weight:500;color:var(--ink)}
+.perk span{font:400 .5rem/1.6 var(--wide);letter-spacing:.06em;color:var(--pink);border:1px solid var(--pink);padding:3px 8px;box-shadow:0 0 8px -3px var(--pink);white-space:nowrap}
+.perk-rail{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(220px,70%);gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:6px;margin:0 -16px;padding-left:16px;padding-right:16px}
+.perk-card{scroll-snap-align:start;border-left:2px solid var(--pink)}
+.perk-card b{font:600 1rem/1.35 var(--display)}
+.contact{padding-top:12px;border-top:1px solid var(--rule)}
+.refer-card h2{font-size:1.5rem}
+.refer-progress{font:400 .62rem/1.4 var(--wide);letter-spacing:.05em;color:rgba(236,229,214,.85)}
+.refer-progress b{font:700 1.1rem var(--display);color:var(--paper);text-shadow:0 0 10px rgba(255,61,127,.6)}
+.big-check{font-weight:500;padding:12px 0;border-bottom:1px solid var(--rule)}
+@media (max-width:400px){.tabs a span{font-size:.46rem}}

@@ -132,6 +132,19 @@ Clients and you switch them on from the Home nudge or Account. On iPhone they on
 2. Redeploy the timer so it runs the weekly speed test: `npx.cmd wrangler deploy --config cron-worker/wrangler.toml`
 3. Optional: a free PageSpeed key so tests never hit Google's shared limit. In Google Cloud (same project), APIs & Services > Library > **PageSpeed Insights API** > Enable, then Credentials > Create credentials > API key. Add it to the Pages project as secret `PSI_API_KEY`.
 
+## Stage 5: the Sidedoor network, More tab, referrals
+
+### What's new
+- **Network tab**: clients opt in to a profile (what they do, town, a line about them, a perk for members, what they're looking for). Members browse, filter by sector or perks, and ask Jordan for an intro. Contact details stay private until Jordan taps **Introduce them**, then both sides get each other's details and a ping.
+- **Your side**: Today > Network (or Account) shows intro requests waiting, members, and history. You can hide any profile.
+- **More tab** replaces Billing and Account for clients: refer a mate, billing, monthly report, network profile, ideas, notifications, password.
+- **Referrals**: a big refer card on Home and More with progress ("2 passed on, 1 joined"). When you mark a lead Contacted or Won, the client who passed it on gets a ping. Won shows your thank-you line.
+- **Fixes**: the app always loads the newest version on a normal refresh. When something fails, you (admin only) now see the real cause, and a missing database update tells you the command to run.
+
+### One-time setup
+1. `npx.cmd wrangler d1 migrations apply sidedoor-portal --remote`
+2. Push. That's it.
+
 ## Coming next
 
 - Ideas for E. Bartlett once her two sites are built.

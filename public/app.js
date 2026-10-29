@@ -85,6 +85,8 @@ const I = {
   me: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>',
   clients: '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c1-3.5 3.6-5.5 6.5-5.5s5.5 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c1.8.8 3 2.6 3.5 5.2"/></svg>',
   today: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+  network: '<svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="18" r="2.5"/><circle cx="19" cy="18" r="2.5"/><path d="M10.8 7.2 6.3 15.8M13.2 7.2l4.5 8.6M7.5 18h9"/></svg>',
+  more: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>',
   money: '<svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="13" rx="2.5"/><path d="M2.5 10.5h19M6.5 15h4"/></svg>',
   bell: '<svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>',
   inbox: '<svg viewBox="0 0 24 24"><path d="M4 13l2-8h12l2 8v6H4z"/><path d="M4 13h5l1 2h4l1-2h5"/></svg>',
@@ -105,7 +107,7 @@ function chrome(active, opts = {}) {
   $('#top-who').textContent = u.role === 'admin' ? 'Admin' : state.client?.business_name || '';
   const items = u.role === 'admin'
     ? [['/', 'Today', I.today], ['/clients', 'Clients', I.clients], ['/money', 'Money', I.money], ['/account', 'Account', I.me]]
-    : [['/', 'Home', I.home], ['/site', 'My site', I.site], ['/requests', 'Requests', I.req], ['/billing', 'Billing', I.money], ['/account', 'Account', I.me]];
+    : [['/', 'Home', I.home], ['/site', 'My site', I.site], ['/requests', 'Requests', I.req], ['/network', 'Network', I.network], ['/account', 'More', I.more]];
   tabs.innerHTML = items.map(([p, label, icon]) =>
     `<a href="#${p}" class="${active === p ? 'on' : ''}" ${active === p ? 'aria-current="page"' : ''}>${icon}<span>${label}</span></a>`).join('');
   refreshBadges();
@@ -227,21 +229,7 @@ async function logout() {
   go('/login');
 }
 
-function accountView() {
-  chrome('/account');
-  const u = state.user;
-  render(`<div class="stack">
-    <p class="eyebrow">Account</p>
-    <h1>${esc(u.name)}</h1>
-    <p class="lede">${esc(u.email)}${state.client ? ` · ${esc(state.client.business_name)}` : ''}</p>
-    <a class="card tight" href="#/password-change"><h3>Change password</h3><p class="faint">Signs you out on other devices</p></a>
-    <div class="card tight row" id="pushrow"><div class="grow"><h3>Phone notifications</h3><p class="faint" id="pushst">Checking...</p></div><span id="pushbtns"></span></div>
-    ${u.role === 'client' ? `<a class="card tight" href="#/refer"><h3>Refer a business</h3><p class="faint">Know someone who needs a site or an app?</p></a>` : `<a class="card tight" href="#/leads"><h3>Leads</h3><p class="faint">Businesses your clients have passed on</p></a>`}
-    ${u.role === 'client' ? `<div class="card tight"><h3>Talk to Jordan</h3><p class="muted">For anything about your site, use <a href="#/requests/new">a request</a> so it's all kept in one place. Something urgent and the site's down? Mark the request as urgent and I'll see it straight away.</p></div>` : ''}
-    <button class="btn ghost block" id="out">Log out</button>
-    <p class="faint">Sidedoor Digital · 98 King Street, Southport · getsidedoor.co.uk</p>
-  </div>`);
-  $('#out').onclick = logout;
+function wirePushRow() {
   const drawPush = async () => {
     let st; try { st = await pushState(); } catch { st = 'unsupported'; }
     const label = { on: 'On for this phone', off: 'Off', denied: 'Blocked. Allow them in your phone settings.', unsupported: "This browser can't do notifications", 'needs-install': 'Add the app to your home screen first, then open it from there' }[st];
@@ -255,6 +243,25 @@ function accountView() {
   drawPush();
 }
 
+function accountView() {
+  if (state.user.role === 'client') return moreView();
+  chrome('/account');
+  const u = state.user;
+  render(`<div class="stack">
+    <p class="eyebrow">Account</p>
+    <h1>${esc(u.name)}</h1>
+    <p class="lede">${esc(u.email)}${state.client ? ` · ${esc(state.client.business_name)}` : ''}</p>
+    <a class="card tight" href="#/password-change"><h3>Change password</h3><p class="faint">Signs you out on other devices</p></a>
+    <div class="card tight row" id="pushrow"><div class="grow"><h3>Phone notifications</h3><p class="faint" id="pushst">Checking...</p></div><span id="pushbtns"></span></div>
+    ${u.role === 'client' ? `<a class="card tight" href="#/refer"><h3>Refer a business</h3><p class="faint">Know someone who needs a site or an app?</p></a>` : `<a class="card tight" href="#/leads"><h3>Leads</h3><p class="faint">Businesses your clients have passed on</p></a><a class="card tight" href="#/intros"><h3>Sidedoor network</h3><p class="faint">Members and intro requests</p></a>`}
+    ${u.role === 'client' ? `<div class="card tight"><h3>Talk to Jordan</h3><p class="muted">For anything about your site, use <a href="#/requests/new">a request</a> so it's all kept in one place. Something urgent and the site's down? Mark the request as urgent and I'll see it straight away.</p></div>` : ''}
+    <button class="btn ghost block" id="out">Log out</button>
+    <p class="faint">Sidedoor Digital · 98 King Street, Southport · getsidedoor.co.uk</p>
+  </div>`);
+  $('#out').onclick = logout;
+  wirePushRow();
+}
+
 /* ---------- client: home ---------- */
 async function clientHome() {
   chrome('/');
@@ -262,8 +269,10 @@ async function clientHome() {
   const d = await api('/home');
   const site = d.sites[0];
   const needOk = d.open_requests.filter((r) => r.status === 'quoted');
-  let bills = null, ideas = [], scenes = null;
+  let bills = null, ideas = [], scenes = null, refs = null, net = null;
   await Promise.all([
+    api('/referrals').then((r) => (refs = r)).catch(() => {}),
+    api('/network').then((r) => (net = r)).catch(() => {}),
     api('/billing').then((b) => (bills = b)).catch(() => {}),
     api('/ideas').then((r) => (ideas = r.ideas.filter((i) => !i.action))).catch(() => {}),
     api('/insights').then((r) => (scenes = r)).catch(() => {})
@@ -299,7 +308,8 @@ async function clientHome() {
     <div class="section-title"><h2>On the go</h2><a class="faint" href="#/requests">See all</a></div>
     <div class="list">${d.open_requests.length ? d.open_requests.slice(0, 5).map((r) => requestCard(r)).join('')
       : emptyBlock(I.req, 'Nothing on the go', 'When you want something changed, send it through and I will quote it.')}</div>
-    <a class="card tight row" href="#/refer"><span class="grow"><b>Know a business that needs this?</b><span class="faint block">Send them my way</span></span><i class="glyph" aria-hidden="true"></i></a>
+    ${net ? networkTeaser(net) : ''}
+    ${referCard(refs)}
   </div>`);
   if ($('#ideas')) wireIdeas($('#ideas'), ideas, d.client.hourly_rate_pence);
 }
@@ -481,7 +491,7 @@ async function adminToday() {
       <p class="eyebrow">Sites to look at</p>
       <ul class="watch mt8">${d.watch.map((w) => `<li class="${w.level}"><a href="#/clients/${esc(w.client_id)}"><b>${esc(w.site)}</b> <span>${esc(w.text)}</span></a></li>`).join('')}</ul></div>`
       : d.sites_count ? `<div class="card tight row"><i class="led on"></i><span class="grow">All ${d.sites_count} sites up and protected.</span></div>` : ''}
-    <div class="tools"><a class="chip" href="#/leads">Leads</a><a class="chip" href="#/admin-ideas">Ideas library</a><a class="chip" href="#/notes">Security news</a><a class="chip" href="#/gsc">Search Console</a></div>
+    <div class="tools"><a class="chip" href="#/intros">Network</a><a class="chip" href="#/leads">Leads</a><a class="chip" href="#/admin-ideas">Ideas library</a><a class="chip" href="#/notes">Security news</a><a class="chip" href="#/gsc">Search Console</a></div>
     ${block('Needs a quote', d.needs_quote, 'Nothing new.')}
     ${block('To do', d.to_do, 'Nothing approved and waiting.')}
     ${block('Waiting on client', d.waiting_on_client, 'No quotes out.')}
@@ -870,7 +880,7 @@ function invoiceCard(i, showClient = false) {
 
 /* ---------- billing: client ---------- */
 async function billingView() {
-  chrome('/billing');
+  chrome('/account');
   loading();
   const d = await api('/billing');
   const due = d.invoices.filter((i) => i.status === 'sent');
@@ -900,7 +910,7 @@ async function billingView() {
 
 async function invoiceView(id) {
   const admin = state.user.role === 'admin';
-  chrome(admin ? '/money' : '/billing');
+  chrome(admin ? '/money' : '/account');
   loading();
   const { invoice: i } = await api(`/invoices/${id}`);
   const editable = admin && i.status === 'draft';
@@ -1623,7 +1633,7 @@ async function reportView(query) {
 async function referView() {
   chrome('/account');
   loading();
-  const { referrals, reward } = await api('/referrals');
+  const { referrals, reward, passed, won } = await api('/referrals');
   const shareText = `I use Sidedoor Digital for my website and app. Jordan builds everything and looks after it properly. Worth a chat: https://getsidedoor.co.uk/?ref=${encodeURIComponent((state.client?.business_name || 'client').toLowerCase().replace(/[^a-z0-9]+/g, '-'))}`;
   const STATUS = { new: 'Passed to Jordan', contacted: 'Jordan has been in touch', won: 'Now a Sidedoor client', not_now: 'Not right now' };
   render(`<div class="stack">
@@ -1631,6 +1641,7 @@ async function referView() {
     <p class="eyebrow">Refer a business</p>
     <h1>Know someone who'd want this?</h1>
     <p class="lede">Most of my work comes from people like you mentioning me. If you know a business that needs a site, an app, or just someone who answers, send them my way.${reward ? ` If they come on board, ${esc(reward)} as a thank you.` : ''}</p>
+    ${passed ? `<div class="stats"><div class="card stat"><b>${passed}</b><span>Passed on</span></div><div class="card stat"><b>${won}</b><span>Now with Sidedoor</span></div><div class="card stat"><b>${won && reward ? '✓' : '-'}</b><span>${won && reward ? 'Thank you earned' : 'Thank you'}</span></div></div>` : ''}
     <button class="btn neon block" id="share">Send them a message</button>
     <form class="card stack" id="f" novalidate>
       <h3>Or pass on their details</h3>
@@ -1713,6 +1724,212 @@ function countUp(root) {
   });
 }
 
+/* ---------- the Sidedoor network ---------- */
+const initials = (n) => String(n || '?').replace(/[^A-Za-z0-9 ]/g, ' ').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
+const telHref = (p) => `tel:${String(p || '').replace(/[^\d+]/g, '')}`;
+
+function memberCard(m, canAsk) {
+  return `<div class="card member ${m.is_me ? 'lit' : ''}" data-member="${esc(m.client_id)}">
+    <div class="row"><span class="mono-badge" aria-hidden="true">${esc(initials(m.display_name))}</span>
+      <div class="grow"><h3>${esc(m.display_name)}</h3><p class="faint">${esc([m.category, m.town].filter(Boolean).join(' · '))}</p></div></div>
+    ${m.about ? `<p class="muted mt8">${esc(m.about)}</p>` : ''}
+    ${m.offer ? `<p class="perk mt8"><span>Member perk</span>${esc(m.offer)}</p>` : ''}
+    ${m.looking_for ? `<p class="faint mt8"><b>Looking for:</b> ${esc(m.looking_for)}</p>` : ''}
+    ${m.is_me ? '<a class="linkish" href="#/network/profile">This is you. Edit your profile</a>'
+      : canAsk ? `<button class="btn ghost small mt16" data-ask="${esc(m.client_id)}">Ask Jordan for an intro</button>
+        <form class="ask stack mt16" data-for="${esc(m.client_id)}" hidden>
+          <textarea class="input" name="message" maxlength="1000" placeholder="What would you like to talk to them about?" required></textarea>
+          <p class="error"></p><button class="btn neon small" type="submit">Send to Jordan</button></form>` : ''}
+  </div>`;
+}
+
+function introCard(i) {
+  const STATUS = { requested: ['new', 'With Jordan'], introduced: ['done', 'Introduced'], declined: ['plain', 'Jordan will be in touch'] };
+  const [cls, label] = STATUS[i.status];
+  const c = i.contact;
+  return `<div class="card tight ${i.unseen ? 'lit' : ''}">
+    <div class="row between"><h3 class="grow">${i.direction === 'out' ? '' : 'From '}${esc(i.other)}</h3><span class="pill ${cls}">${label}</span></div>
+    ${i.message && i.direction === 'out' ? `<p class="faint mt8">"${esc(i.message)}"</p>` : ''}
+    ${c ? `<div class="contact mt16">
+      ${c.name ? `<b>${esc(c.name)}</b>` : ''}
+      <div class="row wrap mt8">${c.phone ? `<a class="btn small" href="${esc(telHref(c.phone))}">Call</a><a class="btn ghost small" href="https://wa.me/${esc(waNumber(c.phone))}" target="_blank" rel="noopener">WhatsApp</a>` : ''}${c.email ? `<a class="btn ghost small" href="mailto:${esc(c.email)}">Email</a>` : ''}</div>
+      ${i.direction === 'in' && i.message ? `<p class="faint mt8">They said: "${esc(i.message)}"</p>` : ''}
+    </div>` : ''}
+  </div>`;
+}
+
+async function networkView(query) {
+  chrome('/network');
+  loading();
+  const d = await api('/network');
+  const joined = d.profile.visible;
+  const others = d.members.filter((m) => !m.is_me);
+  const cats = [...new Set(d.members.map((m) => m.category).filter(Boolean))];
+  let filter = query.get('c') || '';
+  const perks = others.filter((m) => m.offer);
+  const draw = () => {
+    const list = d.members.filter((m) => !filter || (filter === 'perks' ? m.offer : m.category === filter));
+    $('#members').innerHTML = list.length ? list.map((m) => memberCard(m, joined)).join('') : '<p class="faint">Nobody in that one yet.</p>';
+    $$('#filters .chip').forEach((c) => c.setAttribute('aria-pressed', c.dataset.f === filter));
+    wireAsk();
+  };
+  render(`<div class="stack">
+    <p class="eyebrow">Sidedoor network</p>
+    <h1>Businesses that have your back.</h1>
+    <p class="lede">Every business here is looked after by Sidedoor. Find someone you need, share a perk, and Jordan will introduce you properly.</p>
+    ${joined ? '' : `<div class="card night">
+      <p class="eyebrow">You're not in it yet</p>
+      <h2>Join the network</h2>
+      <p class="muted">Other Sidedoor businesses can find you, you can ask for intros, and you can offer members a perk. Your phone and email are only shared when Jordan introduces you.</p>
+      <a class="btn neon small" href="#/network/profile">Set up your profile</a>
+    </div>`}
+    ${d.intros.length ? `<div class="section-title"><h2>Your intros</h2></div><div class="list">${d.intros.map(introCard).join('')}</div>` : ''}
+    <div class="stats">
+      <div class="card stat"><b>${d.members.length}</b><span>Businesses</span></div>
+      <div class="card stat"><b>${perks.length}</b><span>Member perks</span></div>
+      <div class="card stat"><b>${cats.length}</b><span>Sectors</span></div>
+    </div>
+    ${perks.length ? `<div class="section-title"><h2>Member perks</h2></div>
+      <div class="perk-rail">${perks.map((m) => `<a class="card perk-card" href="#/network?c=perks"><b>${esc(m.offer)}</b><span class="faint block mt8">${esc(m.display_name)}</span></a>`).join('')}</div>` : ''}
+    <div class="section-title"><h2>Members</h2></div>
+    <div class="chips" id="filters"><button class="chip" data-f="">All</button>${perks.length ? '<button class="chip" data-f="perks">With a perk</button>' : ''}${cats.map((c) => `<button class="chip" data-f="${esc(c)}">${esc(c)}</button>`).join('')}</div>
+    <div class="list" id="members"></div>
+    ${!others.length ? '<div class="card"><p class="muted">The network is just getting going. As more Sidedoor businesses join, they show up here.</p></div>' : ''}
+  </div>`);
+  $$('#filters .chip').forEach((c) => (c.onclick = () => { filter = c.dataset.f; draw(); }));
+  draw();
+  function wireAsk() {
+    $$('[data-ask]').forEach((b) => (b.onclick = () => { const f = $(`form[data-for="${b.dataset.ask}"]`); f.hidden = !f.hidden; if (!f.hidden) $('textarea', f).focus(); }));
+    $$('form.ask').forEach((f) => onSubmit(f, async (v) => {
+      await api('/network/intro', { method: 'POST', body: { to_client: f.dataset.for, message: v.message } });
+      toast("Sent. Jordan will make the intro.");
+      route();
+    }));
+  }
+}
+
+async function networkProfileView() {
+  chrome('/network');
+  loading();
+  const d = await api('/network');
+  const p = d.profile;
+  render(`<div class="stack">
+    <a class="faint" href="#/network">&larr; Network</a>
+    <p class="eyebrow">Your network profile</p>
+    <h1>${p.visible ? 'Your profile' : 'Join the network'}</h1>
+    <p class="lede">This is what other Sidedoor businesses see. Your phone and email stay private until Jordan introduces you to someone.</p>
+    <form class="card stack" id="f" novalidate>
+      <label class="check big-check"><input type="checkbox" name="visible" value="1" ${p.visible ? 'checked' : ''}> Show my business in the Sidedoor network</label>
+      <div class="field"><label for="dn">Business name</label><input class="input" id="dn" name="display_name" value="${esc(p.display_name || '')}" required></div>
+      <div class="grid2"><div class="field"><label for="cat">What you do</label><select class="input" id="cat" name="category">${d.categories.map((c) => `<option ${c === p.category ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
+        <div class="field"><label for="tw">Town</label><input class="input" id="tw" name="town" value="${esc(p.town || '')}"></div></div>
+      <div class="field"><label for="ab">A line about you</label><textarea class="input" id="ab" name="about" maxlength="280" placeholder="e.g. Southport's pick and mix shop. Sweet tubs, parties and events.">${esc(p.about || '')}</textarea></div>
+      <div class="field"><label for="of">A perk for Sidedoor members (optional)</label><input class="input" id="of" name="offer" maxlength="160" value="${esc(p.offer || '')}" placeholder="e.g. 10% off party tubs for Sidedoor members">
+        <span class="hint">Perks are the best way to get noticed. Members see them first.</span></div>
+      <div class="field"><label for="lf">Looking for (optional)</label><input class="input" id="lf" name="looking_for" maxlength="160" value="${esc(p.looking_for || '')}" placeholder="e.g. a local photographer, a venue for a pop-up"></div>
+      <p class="label mt16">Shared only when Jordan introduces you</p>
+      <div class="grid2"><div class="field"><label for="cn">Contact name</label><input class="input" id="cn" name="contact_name" value="${esc(p.contact_name || '')}"></div>
+        <div class="field"><label for="cp">Phone</label><input class="input" id="cp" name="contact_phone" type="tel" value="${esc(p.contact_phone || '')}"></div></div>
+      <div class="field"><label for="ce">Email</label><input class="input" id="ce" name="contact_email" type="email" value="${esc(p.contact_email || '')}"></div>
+      <p class="error"></p>
+      <button class="btn neon block" type="submit">${p.visible ? 'Save profile' : 'Save and join'}</button>
+    </form>
+  </div>`);
+  onSubmit($('#f'), async (v) => {
+    v.visible = !!v.visible;
+    await api('/network/profile', { method: 'PUT', body: v });
+    toast(v.visible ? "You're in the network" : 'Saved. Hidden from the network.');
+    go('/network');
+  });
+}
+
+async function introsAdminView() {
+  chrome('/');
+  loading();
+  const d = await api('/admin/intros');
+  const pending = d.intros.filter((i) => i.status === 'requested');
+  const done = d.intros.filter((i) => i.status !== 'requested');
+  render(`<div class="stack">
+    <a class="faint" href="#/">&larr; Today</a>
+    <p class="eyebrow">Sidedoor network</p>
+    <h1>Intros and members</h1>
+    <div class="stats">
+      <div class="card stat"><b>${d.members.filter((m) => m.visible).length}</b><span>In the network</span></div>
+      <div class="card stat"><b>${pending.length}</b><span>Intros waiting</span></div>
+      <div class="card stat"><b>${done.filter((i) => i.status === 'introduced').length}</b><span>Intros made</span></div>
+    </div>
+    <div class="section-title"><h2>Waiting on you</h2></div>
+    <div class="list">${pending.length ? pending.map((i) => `<div class="card tight lit">
+      <h3>${esc(i.from_name)} &rarr; ${esc(i.to_name)}</h3>
+      <p class="muted mt8">"${esc(i.message || '')}"</p><p class="faint">${ago(i.created_at)}</p>
+      <div class="row wrap mt8"><button class="btn neon small" data-intro="${esc(i.id)}" data-a="introduce">Introduce them</button><button class="linkish" data-intro="${esc(i.id)}" data-a="decline">Not this one</button></div>
+      <p class="hint mt8">Introducing shares each side's contact details with the other and pings both phones.</p>
+    </div>`).join('') : '<p class="faint">No intro requests waiting.</p>'}</div>
+    <div class="section-title"><h2>Members</h2></div>
+    <div class="list">${d.members.map((m) => `<div class="card tight ${m.visible ? '' : 'dim'}"><div class="row between"><h3 class="grow">${esc(m.display_name)}</h3>${m.visible ? `<button class="linkish" data-hide="${esc(m.client_id)}">Hide</button>` : '<span class="faint">Hidden</span>'}</div>
+      <p class="faint">${esc([m.category, m.town].filter(Boolean).join(' · '))}</p>${m.offer ? `<p class="perk mt8"><span>Perk</span>${esc(m.offer)}</p>` : ''}</div>`).join('') || '<p class="faint">Nobody has joined yet. Clients join from their Network tab.</p>'}</div>
+    ${done.length ? `<div class="section-title"><h2>History</h2></div><div class="list">${done.map((i) => `<div class="card tight row between"><span class="grow">${esc(i.from_name)} &rarr; ${esc(i.to_name)}</span><span class="pill ${i.status === 'introduced' ? 'done' : 'plain'}">${i.status === 'introduced' ? 'Introduced' : 'Declined'}</span></div>`).join('')}</div>` : ''}
+  </div>`);
+  $$('[data-intro]').forEach((b) => (b.onclick = async () => {
+    b.disabled = true;
+    try { await api('/admin/intros', { method: 'PATCH', body: { id: b.dataset.intro, action: b.dataset.a } }); toast(b.dataset.a === 'introduce' ? 'Introduced. Both phones pinged.' : 'Declined'); route(); }
+    catch (e) { toast(e.message, true); b.disabled = false; }
+  }));
+  $$('[data-hide]').forEach((b) => (b.onclick = async () => {
+    if (!confirm('Hide this business from the network?')) return;
+    await api('/admin/intros', { method: 'PATCH', body: { hide_client: b.dataset.hide } }); route();
+  }));
+}
+
+/* ---------- More (clients) ---------- */
+async function moreView() {
+  chrome('/account');
+  loading();
+  const [bills, refs, net] = await Promise.all([api('/billing').catch(() => null), api('/referrals').catch(() => null), api('/network').catch(() => null)]);
+  const u = state.user;
+  render(`<div class="stack">
+    <p class="eyebrow">More</p>
+    <h1>${esc(firstName(u.name))}</h1>
+    <p class="lede">${esc(state.client?.business_name || '')}</p>
+    ${referCard(refs)}
+    <div class="list">
+      <a class="card tight row" href="#/billing"><span class="grow"><h3>Billing</h3><span class="faint block">${bills ? (bills.outstanding_pence ? `${money(bills.outstanding_pence)} to pay` : 'All paid up') : ''}</span></span>${bills?.outstanding_pence ? '<span class="pill quoted">Due</span>' : ''}</a>
+      <a class="card tight row" href="#/report"><span class="grow"><h3>Monthly report</h3><span class="faint block">Your month on one page</span></span></a>
+      <a class="card tight row" href="#/network/profile"><span class="grow"><h3>Network profile</h3><span class="faint block">${net?.profile.visible ? 'Live in the Sidedoor network' : 'Not in the network yet'}</span></span></a>
+      <a class="card tight row" href="#/ideas"><span class="grow"><h3>Ideas for your site</h3><span class="faint block">Picked for the time of year</span></span></a>
+    </div>
+    <div class="section-title"><h2>Settings</h2></div>
+    <div class="card tight row" id="pushrow"><div class="grow"><h3>Phone notifications</h3><p class="faint" id="pushst">Checking...</p></div><span id="pushbtns"></span></div>
+    <a class="card tight" href="#/password-change"><h3>Change password</h3><p class="faint">Signs you out on other devices</p></a>
+    <div class="card tight"><h3>Talk to Jordan</h3><p class="muted">For anything about your site, use <a href="#/requests/new">a request</a> so it's all kept in one place. Something urgent and the site's down? Mark it urgent and I'll see it straight away.</p></div>
+    <button class="btn ghost block" id="out">Log out</button>
+    <p class="faint">Sidedoor Digital · 98 King Street, Southport · getsidedoor.co.uk</p>
+  </div>`);
+  $('#out').onclick = logout;
+  wirePushRow();
+}
+
+function networkTeaser(net) {
+  const others = net.members.filter((m) => !m.is_me);
+  const newIntro = net.intros.find((i) => i.unseen && i.status === 'introduced');
+  if (newIntro) return `<a class="card lit" href="#/network"><p class="eyebrow">Network</p><h3 class="mt8">You've been introduced to ${esc(newIntro.other)}</h3><p class="faint mt8">Their details are waiting in the Network tab.</p></a>`;
+  if (!net.profile.visible) return `<a class="card" href="#/network"><p class="eyebrow">Sidedoor network</p><h3 class="mt8">${others.length ? `${others.length} Sidedoor businesses are in the network` : 'Join the Sidedoor network'}</h3><p class="faint mt8">Find businesses you need, share a perk, get introduced properly.</p></a>`;
+  if (!others.length) return '';
+  const latest = others.slice(0, 3).map((m) => m.display_name);
+  return `<a class="card" href="#/network"><p class="eyebrow">Sidedoor network</p><h3 class="mt8">${others.length} business${others.length === 1 ? '' : 'es'} in the network</h3><p class="faint mt8">Newest: ${esc(latest.join(', '))}</p></a>`;
+}
+
+function referCard(refs) {
+  const reward = refs?.reward;
+  return `<a class="card night refer-card" href="#/refer">
+    <p class="eyebrow">Refer a mate</p>
+    <h2>Know a business that needs this?</h2>
+    <p class="muted">${reward ? `Send them my way. If they come on board, ${esc(reward)} as a thank you.` : 'Send them my way. Most of my work comes from people like you.'}</p>
+    ${refs?.passed ? `<p class="refer-progress mt8"><b>${refs.passed}</b> passed on${refs.won ? ` · <b>${refs.won}</b> joined` : ''}</p>` : ''}
+    <span class="btn neon small">Pass someone on</span>
+  </a>`;
+}
+
 /* ---------- router ---------- */
 let cleanup = null;
 async function loadMe() {
@@ -1742,6 +1959,9 @@ const routes = [
   [/^\/report$/, (m, q) => reportView(q), 'any'],
   [/^\/refer$/, referView, 'client'],
   [/^\/leads$/, leadsView, 'admin'],
+  [/^\/network$/, (m, q) => networkView(q), 'client'],
+  [/^\/network\/profile$/, networkProfileView, 'client'],
+  [/^\/intros$/, introsAdminView, 'admin'],
   [/^\/clients\/new$/, newClientView, 'admin'],
   [/^\/clients\/([\w-]+)$/, (m) => clientDetailView(m[1]), 'admin'],
   [/^\/clients$/, adminClients, 'admin'],

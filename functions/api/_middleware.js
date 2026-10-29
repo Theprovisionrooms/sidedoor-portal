@@ -18,6 +18,16 @@ export async function onRequest(ctx) {
   } catch (e) {
     if (e && e.status) return json({ error: e.message, code: e.code }, e.status);
     console.error(e);
+    const msg = String(e?.message || e);
+    // Jordan sees the real cause; clients get the friendly line.
+    if (ctx.data.user?.role === 'admin') {
+      const schema = /no such (table|column)/i.test(msg);
+      return json({
+        error: schema
+          ? `The live database is missing an update. Run: npx.cmd wrangler d1 migrations apply sidedoor-portal --remote (${msg})`
+          : `Server error: ${msg}`
+      }, 500);
+    }
     return json({ error: 'Something went wrong on our side. Try again in a moment.' }, 500);
   }
 }
