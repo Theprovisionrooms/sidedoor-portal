@@ -166,6 +166,22 @@ Clients and you switch them on from the Home nudge or Account. On iPhone they on
 - Temporary passwords use a lighter hash so a big import stays inside Cloudflare's CPU allowance. Passwords people choose still use the full 100,000 rounds.
 - Automated addresses (like Google Docs reply addresses) are rejected at import, since nobody would get the login.
 
+## Stage 7: live Home, Share tab, friendlier on phones
+
+### What's new
+- **Fixed**: full-width buttons ("Ask for a change", "Log out", "Send them a message" and the rest) had their text stuck in the top corner. A utility class was overriding the button layout. Rows on More (Milestones, Billing) now sit side by side again.
+- **Friendlier look**: rounder cards and buttons, readable labels in plain type instead of tiny wide capitals, boxed form fields, bigger tap targets, a floating tab bar.
+- **Tabs**: Home, My site, Share, Changes, More. The network moved to the top of More (its badge moved with it).
+- **Live Home**: a status card that says the site is live, when it was last checked, checks today, how fast it answered, the latest day from Google, and counts down to the next check. Refreshes every minute and every time the app is brought back to the front. A refresh button too.
+- **Since you last looked**: everything that happened (checks passed, work done, replies, quotes, bills, updates, intros), with new items marked. This is the reason to open it every couple of hours.
+- **Big shortcuts**: Ask for a change, Share my site, See it live.
+- **Add to home screen**: a step by step card on Home until the app is installed.
+- **Share tab**: their link (share or copy), the pages people land on, a QR code to share or save for print, and four ready-made Instagram stories drawn from their real numbers (Google visits, up time, speed, link in bio) with the caption copied for them. A small "Site by Sidedoor" credit sits on each story, which they can switch off.
+- **Referrals, softer**: the big "Refer a mate" panel is gone from Home. In its place, "Someone asked who did your site?" with a one-tap way to pass on your details. Finished changes now offer "Tell your followers".
+
+### One-time setup
+None. No database changes. Push and it's live.
+
 ## Coming next
 
 - Ideas for E. Bartlett once her two sites are built.

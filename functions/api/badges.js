@@ -24,5 +24,6 @@ export async function onRequestGet(ctx) {
          AND NOT EXISTS (SELECT 1 FROM update_reads r WHERE r.update_id = u.id AND r.user_id = ?)`
     ).bind(user.client_id, user.id).first()
   ]);
-  return json({ '/': u.n, '/requests': q.n, '/account': i.n, '/network': n.n });
+  // The network lives under More now, so its intros count there too.
+  return json({ '/': u.n, '/requests': q.n, '/account': i.n + n.n, '/network': n.n });
 }

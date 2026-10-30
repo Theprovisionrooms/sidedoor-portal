@@ -1,6 +1,6 @@
 // Sidedoor Portal service worker. Network first so new deploys show straight away;
 // the cached shell only steps in when there's no signal.
-const CACHE = 'sidedoor-shell-v4';
+const CACHE = 'sidedoor-shell-v5';
 const SHELL = ['/', '/index.html', '/app.js', '/styles.css', '/manifest.webmanifest', '/assets/art/door-mark.webp', '/assets/brand/wm-sidedoor-ink.webp',
   '/assets/art/city-sm.webp', '/assets/fonts/syne.woff2', '/assets/fonts/michroma.woff2', '/assets/fonts/zen-kaku.woff2'];
 

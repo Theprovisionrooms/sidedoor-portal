@@ -90,6 +90,11 @@ const I = {
   money: '<svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="13" rx="2.5"/><path d="M2.5 10.5h19M6.5 15h4"/></svg>',
   bell: '<svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>',
   inbox: '<svg viewBox="0 0 24 24"><path d="M4 13l2-8h12l2 8v6H4z"/><path d="M4 13h5l1 2h4l1-2h5"/></svg>',
+  share: '<svg viewBox="0 0 24 24"><path d="M12 15V3M7.5 7.5 12 3l4.5 4.5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>',
+  plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  eye: '<svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  refresh: '<svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg>',
+  pen: '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>',
   door: '<img class="mark" src="/assets/art/door-mark.webp" alt="" width="84" height="106">',
   wordmark: '<img class="wm" src="/assets/brand/wm-sidedoor-ink.webp" alt="Sidedoor" width="360" height="33"><img class="wm-digital" src="/assets/brand/wm-digital-ink.webp" alt="Digital" width="150" height="12">'
 };
@@ -107,7 +112,7 @@ function chrome(active, opts = {}) {
   $('#top-who').textContent = u.role === 'admin' ? 'Admin' : state.client?.business_name || '';
   const items = u.role === 'admin'
     ? [['/', 'Today', I.today], ['/clients', 'Clients', I.clients], ['/money', 'Money', I.money], ['/account', 'Account', I.me]]
-    : [['/', 'Home', I.home], ['/site', 'My site', I.site], ['/requests', 'Requests', I.req], ['/network', 'Network', I.network], ['/account', 'More', I.more]];
+    : [['/', 'Home', I.home], ['/site', 'My site', I.site], ['/share', 'Share', I.share], ['/requests', 'Changes', I.req], ['/account', 'More', I.more]];
   tabs.innerHTML = items.map(([p, label, icon]) =>
     `<a href="#${p}" class="${active === p ? 'on' : ''}" ${active === p ? 'aria-current="page"' : ''}>${icon}<span>${label}</span></a>`).join('');
   refreshBadges();
@@ -259,60 +264,154 @@ function accountView() {
 }
 
 /* ---------- client: home ---------- */
+// The last time this phone looked at Home, so the feed can show what's new since then.
+const SEEN_KEY = 'sd-seen';
+const readSeen = () => { try { return localStorage.getItem(SEEN_KEY); } catch { return null; } };
+const writeSeen = (v) => { try { localStorage.setItem(SEEN_KEY, v); } catch {} };
+
+function untilText(iso) {
+  const s = Math.round((Date.parse(iso) - Date.now()) / 1000);
+  if (s <= 0) return 'a moment';
+  if (s < 60) return `${s}s`;
+  return `${Math.ceil(s / 60)} min`;
+}
+const dayName = (d) => new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' });
+
+function pulseCard(p) {
+  const s = p.sites[0];
+  if (!s) return '';
+  const many = p.sites.length > 1;
+  const down = p.sites.some((x) => x.up_now === false);
+  const waiting = s.up_now == null;
+  const checks = p.sites.reduce((t, x) => t + x.checks_today, 0);
+  const g = s.google_day;
+  return `<a class="pulse ${down ? 'down' : ''}" href="#/site" id="pulse">
+    <div class="pulse-top"><span class="pulse-host">${esc(many ? `${p.sites.length} sites` : hostOf(s.url))}</span>
+      <span class="live"><i></i>${down ? 'Down' : waiting ? 'Starting' : 'Live'}</span></div>
+    <h2>${down ? "Jordan's on it." : waiting ? 'First check is on its way.' : many ? 'Everything is up and running.' : 'Up and running.'}</h2>
+    <p class="pulse-sub">${down ? 'One site is not answering. Jordan was told the moment it happened.' : s.last_checked_at ? `Last checked ${ago(s.last_checked_at)}. Nothing for you to do.` : 'Checks run every 30 minutes, day and night.'}</p>
+    <div class="pulse-grid">
+      <div><b>${nf(checks)}</b><span>Checks today</span></div>
+      <div><b>${s.ms != null ? `${(s.ms / 1000).toFixed(2)}s` : '-'}</b><span>To answer</span></div>
+      <div><b>${g ? nf(g.clicks) : '-'}</b><span>${g ? `From Google, ${dayName(g.date)}` : 'Google visits'}</span></div>
+    </div>
+    ${s.next_check_at ? `<div class="next"><span>Next check in <b id="next-in">${untilText(s.next_check_at)}</b></span><span class="track"><i id="next-bar"></i></span></div>` : ''}
+  </a>`;
+}
+
+function feedCard(p, since) {
+  const items = [...p.feed];
+  const passed = p.sites.reduce((t, x) => t + (x.checks_since || 0), 0);
+  if (since && passed) items.unshift({ kind: 'checks', tag: 'Checks', title: `${nf(passed)} check${passed === 1 ? '' : 's'} since you last looked`, body: p.sites.some((x) => x.up_now === false) ? 'One needs a look. Jordan has it.' : 'All passed.', at: p.now, href: '#/security', fresh: true });
+  const fresh = items.filter((f) => f.fresh).length;
+  return `<div class="card" id="feed">
+    <div class="row between"><h3>${since ? 'Since you last looked' : 'Lately'}</h3>${fresh ? `<span class="new-count">${fresh} new</span>` : `<span class="faint">${since ? 'All caught up' : ''}</span>`}</div>
+    ${items.length ? `<ul class="feed mt16">${items.slice(0, 8).map((f) => `<li class="${f.fresh ? 'fresh' : ''}"><a href="${esc(f.href)}"><span class="dot"></span>
+      <span><span class="tag">${esc(f.tag)}</span><b>${esc(f.title)}</b>${f.body ? `<span class="sub">${esc(f.body)}</span>` : ''}</span><time>${f.kind === 'checks' ? 'now' : ago(f.at)}</time></a></li>`).join('')}</ul>`
+      : '<p class="muted mt8">A quiet couple of weeks. The checks keep running every 30 minutes and anything Jordan does shows up here.</p>'}
+  </div>`;
+}
+
+function installCard() {
+  if (isStandalone()) return '';
+  const ios = isIOS();
+  const shareGlyph = '<svg class="glyph-share" viewBox="0 0 24 24"><path d="M12 15V3M7.5 7.5 12 3l4.5 4.5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>';
+  return `<div class="card install">
+    <h3>Put Sidedoor on your home screen</h3>
+    <p class="faint mt8">It opens like a normal app and can ping you when a quote is ready or your site needs a look.</p>
+    ${ios ? `<ol><li><span>Tap ${shareGlyph} at the bottom of Safari</span></li><li><span>Scroll down, tap <b>Add to Home Screen</b></span></li><li><span>Open Sidedoor from your home screen</span></li></ol>`
+      : deferredInstall ? '<button class="btn neon block mt16" id="install-now">Add to home screen</button>'
+      : '<ol><li><span>Tap the three dots at the top of Chrome</span></li><li><span>Tap <b>Add to Home screen</b> or <b>Install app</b></span></li></ol>'}
+  </div>`;
+}
+
 async function clientHome() {
   chrome('/');
   loading();
+  const since = readSeen();
   const d = await api('/home');
-  const site = d.sites[0];
   const needOk = d.open_requests.filter((r) => r.status === 'quoted');
-  let bills = null, ideas = [], scenes = null, refs = null, net = null, mem = null, ups = [];
+  let bills = null, ideas = [], refs = null, net = null, mem = null, ups = [], pulse = null;
   await Promise.all([
+    api(`/pulse${since ? `?since=${encodeURIComponent(since)}` : ''}`).then((r) => (pulse = r)).catch(() => {}),
     api('/member').then((r) => (mem = r)).catch(() => {}),
     api('/updates').then((r) => (ups = r.updates)).catch(() => {}),
     api('/referrals').then((r) => (refs = r)).catch(() => {}),
     api('/network').then((r) => (net = r)).catch(() => {}),
     api('/billing').then((b) => (bills = b)).catch(() => {}),
-    api('/ideas').then((r) => (ideas = r.ideas.filter((i) => !i.action))).catch(() => {}),
-    api('/insights').then((r) => (scenes = r)).catch(() => {})
+    api('/ideas').then((r) => (ideas = r.ideas.filter((i) => !i.action))).catch(() => {})
   ]);
+  const site = d.sites[0];
   const dueBill = bills?.invoices.find((i) => i.status === 'sent' && !i.claimed_paid_at);
+  const unread = ups.find((u) => u.unread);
+  const isNew = mem?.member && Date.now() - Date.parse(mem.member.since) < 14 * 864e5;
+  const reportDue = new Date().getDate() <= 10;
+  const others = d.open_requests.filter((r) => r.status !== 'quoted');
+
   render(`<div class="stack">
-    <p class="eyebrow">${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
-    <h1>${greeting()}, ${esc(firstName(state.user.name))}.</h1>
-    ${mem?.member && Date.now() - Date.parse(mem.member.since) < 14 * 864e5 ? `<p class="lede">Welcome to Sidedoor. You're member No. ${esc(mem.member.number_label)}.</p>${membershipCard(mem.member)}` : ''}
-    ${ups.find((u) => u.unread) ? updateCard(ups.find((u) => u.unread), true) : ''}
+    <div class="hello"><div><p class="eyebrow">${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+      <h1>${greeting()}, ${esc(firstName(state.user.name))}.</h1></div>
+      <button class="refresh" id="refresh" aria-label="Refresh">${I.refresh}</button></div>
+    ${isNew ? `<p class="lede">Welcome to Sidedoor. You're member No. ${esc(mem.member.number_label)}.</p>${membershipCard(mem.member)}` : ''}
     ${needOk.length ? `<a class="card night" href="#/requests/${esc(needOk[0].id)}">
         <p class="eyebrow">Needs your OK</p><h2>${esc(needOk[0].title)}</h2>
-        <p class="muted">${duration(needOk[0].quoted_minutes)} · ${money(needOk[0].quoted_pence)}. Tap to approve.</p>
+        <p class="muted">${duration(needOk[0].quoted_minutes)} · ${money(needOk[0].quoted_pence)}. Tap to have a look.</p>
         ${needOk.length > 1 ? `<p class="faint">Plus ${needOk.length - 1} more waiting</p>` : ''}</a>` : ''}
-    ${site ? `<a class="card night" href="#/view/${esc(site.id)}">
-        <p class="eyebrow">Your site</p><h2>${esc(hostOf(site.url))}</h2>
-        <p class="muted">See it as your customers do, on phone and desktop.</p>
-        <span class="btn ghost on-night small">View live site</span></a>` : ''}
-    <div class="stats">
-      <div class="card stat"><b>${d.open_requests.length}</b><span>Open requests</span></div>
-      <div class="card stat"><b>${d.done_count}</b><span>Jobs done</span></div>
-      <div class="card stat"><b>${money(d.client.hourly_rate_pence)}</b><span>Per hour</span></div>
-    </div>
     ${dueBill ? `<a class="card night" href="#/billing/${esc(dueBill.id)}"><p class="eyebrow">${dueBill.overdue ? 'Overdue' : 'Bill ready'}</p>
         <div class="row between"><h2>${esc(dueBill.title)}</h2><span class="price-sm">${money(dueBill.total_pence)}</span></div>
         <span class="btn neon small">Pay with Revolut</span></a>` : ''}
-    <a class="btn neon block" href="#/requests/new">Ask for a change</a>
-    ${pushNudge()}
-    ${scenes ? `<a class="card" href="#/site">
-      <div class="row between"><span class="eyebrow">Behind the scenes</span><span class="faint">This month</span></div>
-      <div class="scenes mt16"><div><b>${nf(scenes.checks_30d)}</b><span>Checks</span></div><div><b>${scenes.health.filter((h) => h.protections).reduce((t, h) => t + h.protections_ok, 0)}/${scenes.health.filter((h) => h.protections).reduce((t, h) => t + h.protections_total, 0) || '-'}</b><span>Protections</span></div><div><b>${scenes.analytics.find((a) => a.has_data) ? nf(scenes.analytics.reduce((t, a) => t + (a.now?.clicks || 0), 0)) : '-'}</b><span>Google visits</span></div></div>
-      ${scenes.log[0] ? `<p class="faint mt16">Latest: ${esc(scenes.log[0].title)}, ${ago(scenes.log[0].created_at)}</p>` : ''}</a>` : ''}
+    <div id="pulse-slot">${pulse ? pulseCard(pulse) : ''}</div>
+    <div class="quick">
+      <a href="#/requests/new"><span class="ico pink">${I.pen}</span>Ask for a change</a>
+      <a href="#/share"><span class="ico">${I.share}</span>Share my site</a>
+      ${site ? `<a href="#/view/${esc(site.id)}"><span class="ico">${I.eye}</span>See it live</a>` : `<a href="#/site"><span class="ico">${I.site}</span>My site</a>`}
+    </div>
+    ${installCard() || pushNudge()}
+    ${unread ? updateCard(unread, true) : ''}
+    <div id="feed-slot">${pulse ? feedCard(pulse, since) : ''}</div>
+    ${others.length ? `<div class="section-title"><h2>On the go</h2><a class="faint" href="#/requests">See all</a></div>
+      <div class="list">${others.slice(0, 3).map((r) => requestCard(r)).join('')}</div>` : ''}
+    ${reportDue ? `<a class="card lit" href="#/report"><p class="eyebrow">New</p><h3 class="mt8">Your ${esc(new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() - 1, 1)).toLocaleDateString('en-GB', { month: 'long', timeZone: 'UTC' }))} report is in</h3><p class="faint mt8">Your month on one page.</p></a>` : ''}
+    ${ideas.length ? `<div class="section-title"><h2>Worth doing now</h2><a class="faint" href="#/ideas">All ideas</a></div><div class="list" id="ideas">${ideaCard(ideas[0], d.client.hourly_rate_pence)}</div>` : ''}
     ${mem?.tip ? tipCard(mem.tip) : ''}
-    ${new Date().getDate() <= 10 && scenes ? `<a class="card lit" href="#/report"><p class="eyebrow">New</p><h3 class="mt8">Your ${esc(new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() - 1, 1)).toLocaleDateString('en-GB', { month: 'long', timeZone: 'UTC' }))} report is in</h3><p class="faint mt8">Tap to see your month.</p></a>` : ''}
-    ${ideas.length ? `<div class="section-title"><h2>Ideas for right now</h2><a class="faint" href="#/ideas">All ideas</a></div><div class="list" id="ideas">${ideas.slice(0, 2).map((i) => ideaCard(i, d.client.hourly_rate_pence)).join('')}</div>` : ''}
-    <div class="section-title"><h2>On the go</h2><a class="faint" href="#/requests">See all</a></div>
-    <div class="list">${d.open_requests.length ? d.open_requests.slice(0, 5).map((r) => requestCard(r)).join('')
-      : emptyBlock(I.req, 'Nothing on the go', 'When you want something changed, send it through and I will quote it.')}</div>
     ${net ? networkTeaser(net) : ''}
     ${referCard(refs)}
   </div>`);
   if ($('#ideas')) wireIdeas($('#ideas'), ideas, d.client.hourly_rate_pence);
+  $('#install-now')?.addEventListener('click', async () => { deferredInstall.prompt(); try { await deferredInstall.userChoice; } catch {} deferredInstall = null; route(); });
+
+  // Live: the countdown ticks, the pulse refreshes every minute and whenever the app comes back to the front.
+  let latest = pulse;
+  const tick = () => {
+    const s = latest?.sites[0];
+    if (!s?.next_check_at) return;
+    const el = $('#next-in'), bar = $('#next-bar');
+    if (el) el.textContent = untilText(s.next_check_at);
+    if (bar) {
+      const total = (latest.check_every_mins || 30) * 60000;
+      const left = Math.max(0, Date.parse(s.next_check_at) - Date.now());
+      bar.style.width = `${Math.round(((total - left) / total) * 100)}%`;
+    }
+  };
+  const refresh = async (manual = false) => {
+    const b = $('#refresh');
+    if (manual && b) b.classList.add('spin');
+    try {
+      latest = await api(`/pulse${since ? `?since=${encodeURIComponent(since)}` : ''}`);
+      if ($('#pulse-slot')) $('#pulse-slot').innerHTML = pulseCard(latest);
+      if ($('#feed-slot')) $('#feed-slot').innerHTML = feedCard(latest, since);
+      tick();
+      refreshBadges();
+    } catch {}
+    if (b) setTimeout(() => b.classList.remove('spin'), 400);
+  };
+  $('#refresh').onclick = () => { badgeTimer = 0; refresh(true); };
+  tick();
+  const t1 = setInterval(tick, 1000);
+  const t2 = setInterval(() => document.visibilityState === 'visible' && refresh(), 60000);
+  const onVis = () => { if (document.visibilityState === 'visible') refresh(); else writeSeen(new Date().toISOString()); };
+  document.addEventListener('visibilitychange', onVis);
+  cleanup = () => { clearInterval(t1); clearInterval(t2); document.removeEventListener('visibilitychange', onVis); writeSeen(new Date().toISOString()); };
 }
 
 /* ---------- requests ---------- */
@@ -325,7 +424,7 @@ async function requestsList() {
   const open = requests.filter((r) => ['new', 'quoted', 'approved', 'in_progress'].includes(r.status));
   const past = requests.filter((r) => !open.includes(r));
   render(`<div class="stack">
-    <p class="eyebrow">Requests</p>
+    <p class="eyebrow">Changes</p>
     <div class="row between"><h1>Your changes</h1></div>
     <p class="lede">Work is ${money(state.client?.hourly_rate_pence ?? 1500)} an hour and most changes take under an hour. I'll always quote first, nothing starts until you say so.</p>
     ${replyText ? `<p class="status-line"><i class="led on"></i>Jordan usually quotes in ${replyText}</p>` : ''}
@@ -417,7 +516,8 @@ async function requestDetail(id) {
       <button type="button" class="linkish" data-act="cancel">Cancel request</button>
     </form>`;
   } else if (r.status === 'done') {
-    action = `<div class="card"><h3>Done ${ago(r.completed_at)}</h3><p class="muted">${r.charge_pence ? `${duration(r.logged_minutes)} · ${money(r.charge_pence)}` : 'No charge'}</p></div>`;
+    action = `<div class="card"><h3>Done ${ago(r.completed_at)}</h3><p class="muted">${r.charge_pence ? `${duration(r.logged_minutes)} · ${money(r.charge_pence)}` : 'No charge'}</p>
+      ${!admin ? `<div class="row wrap mt16">${r.site ? `<a class="btn small" href="#/view/${esc(r.site.id)}">See it live</a>` : ''}<a class="btn ghost small" href="#/share">Tell your followers</a></div>` : ''}</div>`;
   }
 
   render(`<div class="stack">
@@ -1641,7 +1741,7 @@ async function referView() {
   const shareText = `I use Sidedoor Digital for my website and app. Jordan builds everything and looks after it properly. Worth a chat: https://getsidedoor.co.uk/?ref=${encodeURIComponent((state.client?.business_name || 'client').toLowerCase().replace(/[^a-z0-9]+/g, '-'))}`;
   const STATUS = { new: 'Passed to Jordan', contacted: 'Jordan has been in touch', won: 'Now a Sidedoor client', not_now: 'Not right now' };
   render(`<div class="stack">
-    <a class="faint" href="#/account">&larr; Account</a>
+    <a class="faint" href="#/account">&larr; More</a>
     <p class="eyebrow">Refer a business</p>
     <h1>Know someone who'd want this?</h1>
     <p class="lede">Most of my work comes from people like you mentioning me. If you know a business that needs a site, an app, or just someone who answers, send them my way.${reward ? ` If they come on board, ${esc(reward)} as a thank you.` : ''}</p>
@@ -1763,7 +1863,7 @@ function introCard(i) {
 }
 
 async function networkView(query) {
-  chrome('/network');
+  chrome('/account');
   loading();
   const d = await api('/network');
   const joined = d.profile.visible;
@@ -1778,6 +1878,7 @@ async function networkView(query) {
     wireAsk();
   };
   render(`<div class="stack">
+    <a class="faint" href="#/account">&larr; More</a>
     <p class="eyebrow">Sidedoor network</p>
     <h1>Businesses that have your back.</h1>
     <p class="lede">Every business here is looked after by Sidedoor. Find someone you need, share a perk, and Jordan will introduce you properly.</p>
@@ -1813,7 +1914,7 @@ async function networkView(query) {
 }
 
 async function networkProfileView() {
-  chrome('/network');
+  chrome('/account');
   loading();
   const d = await api('/network');
   const p = d.profile;
@@ -1896,8 +1997,8 @@ async function moreView() {
     <h1>${esc(firstName(u.name))}</h1>
     <p class="lede">${esc(state.client?.business_name || '')}</p>
     ${mem?.member ? `${membershipCard(mem.member)}<a class="card tight row" href="#/member"><span class="grow"><h3>Milestones</h3><span class="faint block">${mem.member.unlocked} of ${mem.member.milestones.length} unlocked</span></span><span class="mono">${Math.round((mem.member.unlocked / mem.member.milestones.length) * 100)}%</span></a>` : ''}
-    ${referCard(refs)}
     <div class="list">
+      <a class="card tight row" href="#/network"><span class="grow"><h3>Sidedoor network</h3><span class="faint block">${net?.profile.visible ? `${net.members.filter((m) => !m.is_me).length} businesses, perks and intros` : 'Find businesses you need, share a perk'}</span></span>${state.badges?.['/network'] ? `<span class="pill urgent">${state.badges['/network']} new</span>` : ''}</a>
       <a class="card tight row" href="#/billing"><span class="grow"><h3>Billing</h3><span class="faint block">${bills ? (bills.outstanding_pence ? `${money(bills.outstanding_pence)} to pay` : 'All paid up') : ''}</span></span>${bills?.outstanding_pence ? '<span class="pill quoted">Due</span>' : ''}</a>
       <a class="card tight row" href="#/report"><span class="grow"><h3>Monthly report</h3><span class="faint block">Your month on one page</span></span></a>
       <a class="card tight row" href="#/network/profile"><span class="grow"><h3>Network profile</h3><span class="faint block">${net?.profile.visible ? 'Live in the Sidedoor network' : 'Not in the network yet'}</span></span></a>
@@ -1905,6 +2006,7 @@ async function moreView() {
       <a class="card tight row" href="#/tips"><span class="grow"><h3>Tips</h3><span class="faint block">A new one every Monday</span></span></a>
       <a class="card tight row" href="#/ideas"><span class="grow"><h3>Ideas for your site</h3><span class="faint block">Picked for the time of year</span></span></a>
     </div>
+    ${referCard(refs)}
     <div class="section-title"><h2>Settings</h2></div>
     <div class="card tight row" id="pushrow"><div class="grow"><h3>Phone notifications</h3><p class="faint" id="pushst">Checking...</p></div><span id="pushbtns"></span></div>
     <a class="card tight" href="#/password-change"><h3>Change password</h3><p class="faint">Signs you out on other devices</p></a>
@@ -1928,12 +2030,10 @@ function networkTeaser(net) {
 
 function referCard(refs) {
   const reward = refs?.reward;
-  return `<a class="card night refer-card" href="#/refer">
-    <p class="eyebrow">Refer a mate</p>
-    <h2>Know a business that needs this?</h2>
-    <p class="muted">${reward ? `Send them my way. If they come on board, ${esc(reward)} as a thank you.` : 'Send them my way. Most of my work comes from people like you.'}</p>
-    ${refs?.passed ? `<p class="refer-progress mt8"><b>${refs.passed}</b> passed on${refs.won ? ` · <b>${refs.won}</b> joined` : ''}</p>` : ''}
-    <span class="btn neon small">Pass someone on</span>
+  return `<a class="card tight asked" href="#/refer">
+    <h3>Someone asked who did your site?</h3>
+    <p class="faint mt8">Pass my details on in one tap.${reward ? ` If they come on board, ${esc(reward)} as a thank you.` : ''}</p>
+    ${refs?.passed ? `<p class="faint mt8"><b>${refs.passed}</b> passed on${refs.won ? ` · <b>${refs.won}</b> joined` : ''}</p>` : ''}
   </a>`;
 }
 
@@ -2080,6 +2180,260 @@ async function systemView() {
   $('#again').onclick = () => route();
 }
 
+/* ---------- share: link, QR, ready-made stories ---------- */
+let qrLoaded = null;
+function loadQr() {
+  if (window.qrcode) return Promise.resolve();
+  if (!qrLoaded) qrLoaded = new Promise((ok, bad) => {
+    const sc = document.createElement('script');
+    sc.src = '/vendor/qrcode.js';
+    sc.onload = ok; sc.onerror = () => { qrLoaded = null; bad(new Error("The QR code didn't load. Try again.")); };
+    document.head.appendChild(sc);
+  });
+  return qrLoaded;
+}
+function qrMatrix(text) {
+  const q = window.qrcode(0, 'M');
+  q.addData(text);
+  q.make();
+  const n = q.getModuleCount();
+  return { n, dark: (r, c) => q.isDark(r, c) };
+}
+function qrSvg(m) {
+  let d = '';
+  for (let r = 0; r < m.n; r++) for (let c = 0; c < m.n; c++) if (m.dark(r, c)) d += `M${c} ${r}h1v1h-1z`;
+  return `<svg viewBox="0 0 ${m.n} ${m.n}" shape-rendering="crispEdges" role="img" aria-label="QR code"><path d="${d}" fill="#141722"/></svg>`;
+}
+function qrPng(m, label) {
+  const size = 1200, pad = 110, cell = Math.floor((size - pad * 2) / m.n), off = Math.round((size - cell * m.n) / 2);
+  const cv = document.createElement('canvas');
+  cv.width = size; cv.height = size + 140;
+  const x = cv.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, cv.width, cv.height);
+  x.fillStyle = '#141722';
+  for (let r = 0; r < m.n; r++) for (let c = 0; c < m.n; c++) if (m.dark(r, c)) x.fillRect(off + c * cell, off + r * cell, cell, cell);
+  x.font = '600 58px Syne, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.fillText(label, size / 2, size + 40);
+  return cv;
+}
+
+const canvasBlob = (cv) => new Promise((ok) => cv.toBlob(ok, 'image/png'));
+function saveBlob(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+// Hands an image to the phone's share sheet (Instagram, WhatsApp, Facebook...). Falls back to saving it.
+async function shareImage(blob, name, caption) {
+  if (caption) { try { await navigator.clipboard.writeText(caption); } catch {} }
+  const file = new File([blob], name, { type: 'image/png' });
+  if (navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file] }); if (caption) toast('Caption copied too. Paste it in.'); } catch {}
+    return;
+  }
+  saveBlob(blob, name);
+  toast(caption ? 'Saved. Caption copied, paste it in when you post.' : 'Saved to your downloads');
+}
+async function shareText(text, url) {
+  if (navigator.share) { try { await navigator.share(url ? { text, url } : { text }); } catch {} return; }
+  try { await navigator.clipboard.writeText(url ? `${text} ${url}` : text); toast('Copied. Paste it anywhere.'); } catch { toast(url || text); }
+}
+
+const loadImg = (src) => new Promise((ok) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = src; });
+function wrapLines(x, text, maxW) {
+  const words = String(text).split(/\s+/), lines = [];
+  let line = '';
+  for (const w of words) {
+    const t = line ? `${line} ${w}` : w;
+    if (x.measureText(t).width > maxW && line) { lines.push(line); line = w; } else line = t;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+// One 1080 x 1920 story, in the Sidedoor night style, with the client's own name and site front and centre.
+async function drawStory(cv, st, opt) {
+  const W = 1080, H = 1920, x = cv.getContext('2d');
+  cv.width = W; cv.height = H;
+  const [night, door] = await Promise.all([loadImg('/assets/art/night.webp'), loadImg('/assets/art/door-mark.webp')]);
+  x.fillStyle = '#0C1017'; x.fillRect(0, 0, W, H);
+  if (night) {
+    const k = Math.max(W / night.width, H / night.height);
+    x.drawImage(night, (W - night.width * k) / 2, (H - night.height * k) / 2, night.width * k, night.height * k);
+  }
+  const g = x.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, 'rgba(12,16,23,.55)'); g.addColorStop(.55, 'rgba(12,16,23,.8)'); g.addColorStop(1, 'rgba(12,16,23,.95)');
+  x.fillStyle = g; x.fillRect(0, 0, W, H);
+  // rain
+  let seed = st.key.length * 97 + 13;
+  const rnd = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+  x.lineCap = 'round';
+  for (let i = 0; i < 90; i++) {
+    const rx = rnd() * W, ry = rnd() * H, len = 40 + rnd() * 90;
+    x.strokeStyle = i % 9 === 0 ? 'rgba(255,61,127,.35)' : 'rgba(236,229,214,.09)';
+    x.lineWidth = i % 9 === 0 ? 2 : 1.5;
+    x.beginPath(); x.moveTo(rx, ry); x.lineTo(rx - len * .18, ry + len); x.stroke();
+  }
+  const L = 96, maxW = W - L * 2;
+  x.textBaseline = 'alphabetic';
+  // label
+  x.fillStyle = '#FF3D7F'; x.shadowColor = '#FF3D7F'; x.shadowBlur = 18;
+  x.beginPath(); x.arc(L + 9, 236, 9, 0, Math.PI * 2); x.fill();
+  x.shadowBlur = 0;
+  x.font = '400 30px Michroma, sans-serif'; x.fillStyle = 'rgba(236,229,214,.75)';
+  x.fillText(st.label.toUpperCase(), L + 34, 247);
+  // business name
+  x.font = '700 64px Syne, sans-serif'; x.fillStyle = '#ECE5D6';
+  wrapLines(x, opt.business, maxW).slice(0, 2).forEach((l, i) => x.fillText(l, L, 350 + i * 74));
+  // the big number
+  let size = 300;
+  x.font = `700 ${size}px Syne, sans-serif`;
+  while (x.measureText(st.big).width > maxW && size > 90) { size -= 10; x.font = `700 ${size}px Syne, sans-serif`; }
+  x.fillStyle = '#ECE5D6'; x.shadowColor = 'rgba(255,61,127,.75)'; x.shadowBlur = 44;
+  const bigY = 980;
+  x.fillText(st.big, L - 6, bigY);
+  x.shadowBlur = 0;
+  // the line under it
+  x.font = '500 62px "Zen Kaku Gothic New", sans-serif'; x.fillStyle = 'rgba(236,229,214,.92)';
+  const lines = wrapLines(x, st.line, maxW).slice(0, 3);
+  lines.forEach((l, i) => x.fillText(l, L, bigY + 120 + i * 82));
+  if (st.small) {
+    x.font = '500 42px "Zen Kaku Gothic New", sans-serif'; x.fillStyle = 'rgba(236,229,214,.6)';
+    wrapLines(x, st.small, maxW).slice(0, 2).forEach((l, i) => x.fillText(l, L, bigY + 150 + lines.length * 82 + i * 56));
+  }
+  // their site, as a button-shaped pill
+  x.font = '600 48px "Zen Kaku Gothic New", sans-serif';
+  const host = opt.host, pw = Math.min(maxW, x.measureText(host).width + 100), py = 1560;
+  x.fillStyle = 'rgba(236,229,214,.1)'; x.strokeStyle = 'rgba(255,61,127,.8)'; x.lineWidth = 3;
+  x.shadowColor = 'rgba(255,61,127,.6)'; x.shadowBlur = 24;
+  x.beginPath(); if (x.roundRect) x.roundRect(L, py, pw, 108, 54); else x.rect(L, py, pw, 108); x.fill(); x.stroke();
+  x.shadowBlur = 0; x.fillStyle = '#ECE5D6';
+  x.fillText(host, L + 50, py + 70, pw - 100);
+  // a quiet credit, which they can switch off
+  if (opt.credit) {
+    if (door) x.drawImage(door, L, 1772, 30, 38);
+    x.font = '400 24px Michroma, sans-serif'; x.fillStyle = 'rgba(236,229,214,.5)';
+    x.fillText('SITE BY SIDEDOOR', L + 46, 1800);
+  }
+}
+
+function storiesFor(d) {
+  const host = d.host, list = [];
+  if (d.clicks) list.push({ key: 'found', label: 'This month', big: nf(d.clicks), line: `people found us on Google in the last four weeks.`, small: d.topSearch ? `Top search: "${d.topSearch}"` : '', caption: `${nf(d.clicks)} of you found us on Google this month. Thank you. Come and see what's new: ${host}` });
+  list.push({ key: 'open', label: 'Open online', big: d.uptime != null && d.uptime >= 99 ? `${d.uptime}%` : '24/7', line: d.uptime != null && d.uptime >= 99 ? 'up time this month. Day or night, we are open online.' : 'Day or night, we are open online.', small: '', caption: `Day or night, you can find us online: ${host}` });
+  if (d.lcp) list.push({ key: 'fast', label: 'Quick', big: `${d.lcp}s`, line: 'to load on your phone. No waiting about.', small: '', caption: `Quick to browse, easy to find what you want: ${host}` });
+  list.push({ key: 'visit', label: 'Find us online', big: 'Link in bio', line: 'Everything we do, in one place.', small: '', caption: `Everything's on the site: ${host}` });
+  return list;
+}
+
+async function shareView() {
+  chrome('/share');
+  loading();
+  const [home, ins, refs] = await Promise.all([api('/home'), api('/insights').catch(() => null), api('/referrals').catch(() => null)]);
+  const site = home.sites[0];
+  if (!site) return render(`<div class="stack"><p class="eyebrow">Share</p><h1>Show it off.</h1>${emptyBlock(I.share, 'No site linked yet', 'Once Jordan links your site, everything to share it shows up here.')}</div>`);
+  const host = hostOf(site.url);
+  const health = ins?.health.find((h) => h.site_id === site.id);
+  const an = ins?.analytics.find((a) => a.site_id === site.id);
+  let detail = null;
+  if (an?.has_data) detail = await api(`/analytics/${site.id}`).catch(() => null);
+  const stats = {
+    host,
+    clicks: an?.has_data ? an.now.clicks : 0,
+    topSearch: detail?.queries?.find((q) => !q.key.toLowerCase().includes(host.split('.')[0]))?.key || '',
+    uptime: health?.uptime_30d ?? null,
+    lcp: health?.speed?.lcp_ms ? (health.speed.lcp_ms / 1000).toFixed(1) : null
+  };
+  const pages = (detail?.pages || []).map((p) => p.key).filter((u) => { try { return new URL(u).pathname.length > 1; } catch { return false; } }).slice(0, 5);
+  const stories = storiesFor(stats);
+  let credit = (() => { try { return localStorage.getItem('sd-credit') !== '0'; } catch { return true; } })();
+  const business = state.client?.business_name || home.client.business_name;
+  const reward = refs?.reward;
+
+  render(`<div class="stack">
+    <p class="eyebrow">Share</p>
+    <h1>Show it off.</h1>
+    <p class="lede">Your site works hardest when people see it. Everything here is ready to post, made from your real numbers.</p>
+
+    <div class="card">
+      <h3>Your link</h3>
+      <div class="linkbox"><span>${esc(host)}</span><button class="btn small" id="share-link">Share</button></div>
+      <div class="row wrap mt8"><button class="linkish" id="copy-link">Copy link</button></div>
+      ${pages.length ? `<p class="label mt16">Pages people land on</p><div class="page-links">${pages.map((u) => `<button class="chip" data-page="${esc(u)}">${esc(new URL(u).pathname.replace(/\/$/, '') || '/')}</button>`).join('')}</div>` : ''}
+    </div>
+
+    <div class="section-title"><h2>Stories, ready to post</h2></div>
+    <p class="faint pull-up">Swipe through, tap Share and pick Instagram, Facebook or WhatsApp. The caption is copied for you.</p>
+    <div class="stories" id="stories">${stories.map((st, i) => `<div class="story" data-i="${i}">
+      <canvas width="1080" height="1920" aria-label="${esc(`${st.big} ${st.line}`)}"></canvas>
+      <div class="row"><button class="btn neon small" data-share="${i}">Share</button><button class="btn ghost small" data-save="${i}">Save</button></div>
+    </div>`).join('')}</div>
+    <div class="card tight toggle"><span>Show "Site by Sidedoor" on stories</span><button class="switch" id="credit" role="switch" aria-checked="${credit}" aria-label="Show Site by Sidedoor"></button></div>
+
+    <div class="card">
+      <div class="qr-wrap"><div class="qr" id="qr"></div>
+        <div><h3>Your QR code</h3><p class="faint mt8">For the counter, menus, flyers, the van. One scan and they're on your site.</p></div></div>
+      <div class="grid2 mt16"><button class="btn small" id="qr-share">Share</button><button class="btn ghost small" id="qr-save">Save image</button></div>
+    </div>
+
+    <div class="card tight asked">
+      <h3>Someone asked who did your site?</h3>
+      <p class="faint mt8">Send them my details in one tap.${reward ? ` If they come on board, ${esc(reward)} as a thank you.` : ''}</p>
+      <div class="row wrap mt16"><button class="btn ghost small" id="share-me">Send Jordan's details</button><a class="linkish" href="#/refer">Or pass on theirs</a></div>
+    </div>
+  </div>`);
+
+  const shareUrl = (u) => shareText(`Have a look: `, u);
+  $('#share-link').onclick = () => shareUrl(site.url);
+  $('#copy-link').onclick = async () => { try { await navigator.clipboard.writeText(site.url); toast('Link copied'); } catch { toast(site.url); } };
+  $$('[data-page]').forEach((b) => (b.onclick = () => shareUrl(b.dataset.page)));
+  $('#share-me').onclick = () => shareText(`I use Sidedoor Digital for my website. Jordan built it and looks after it properly, and he actually answers. Worth a chat:`, `https://getsidedoor.co.uk/?ref=${encodeURIComponent(business.toLowerCase().replace(/[^a-z0-9]+/g, '-'))}`);
+
+  // Stories are drawn once the fonts are in, and each keeps a ready image so Share opens the sheet straight away.
+  const blobs = [];
+  const fileName = (st) => `${host.replace(/\W+/g, '-')}-${st.key}.png`;
+  const drawAll = async () => {
+    try { await Promise.all(['700 40px Syne', '400 20px Michroma', '500 20px "Zen Kaku Gothic New"'].map((f) => document.fonts.load(f))); } catch {}
+    await Promise.all(stories.map(async (st, i) => {
+      const cv = $(`.story[data-i="${i}"] canvas`);
+      if (!cv) return;
+      await drawStory(cv, st, { business, host, credit });
+      blobs[i] = await canvasBlob(cv);
+    }));
+  };
+  drawAll();
+  $$('[data-share]').forEach((b) => (b.onclick = async () => {
+    const i = Number(b.dataset.share);
+    if (!blobs[i]) return toast('One second, still drawing it');
+    await shareImage(blobs[i], fileName(stories[i]), stories[i].caption);
+  }));
+  $$('[data-save]').forEach((b) => (b.onclick = () => {
+    const i = Number(b.dataset.save);
+    if (!blobs[i]) return toast('One second, still drawing it');
+    saveBlob(blobs[i], fileName(stories[i]));
+    try { navigator.clipboard.writeText(stories[i].caption); toast('Saved. Caption copied too.'); } catch { toast('Saved'); }
+  }));
+  $('#credit').onclick = (e) => {
+    credit = !credit;
+    e.currentTarget.setAttribute('aria-checked', credit);
+    try { localStorage.setItem('sd-credit', credit ? '1' : '0'); } catch {}
+    drawAll();
+  };
+
+  // QR code
+  let qrBlob = null;
+  try {
+    await loadQr();
+    const m = qrMatrix(site.url);
+    $('#qr').innerHTML = qrSvg(m);
+    await document.fonts.load('600 40px Syne').catch(() => {});
+    qrBlob = await canvasBlob(qrPng(m, host));
+  } catch (e) { $('#qr').innerHTML = `<p class="faint">${esc(e.message)}</p>`; }
+  $('#qr-share').onclick = () => (qrBlob ? shareImage(qrBlob, `${host}-qr.png`) : toast('QR code not ready', true));
+  $('#qr-save').onclick = () => (qrBlob ? saveBlob(qrBlob, `${host}-qr.png`) : toast('QR code not ready', true));
+}
+
 /* ---------- router ---------- */
 let cleanup = null;
 async function loadMe() {
@@ -2108,6 +2462,7 @@ const routes = [
   [/^\/notes$/, adminNotesView, 'admin'],
   [/^\/report$/, (m, q) => reportView(q), 'any'],
   [/^\/refer$/, referView, 'client'],
+  [/^\/share$/, shareView, 'client'],
   [/^\/leads$/, leadsView, 'admin'],
   [/^\/network$/, (m, q) => networkView(q), 'client'],
   [/^\/network\/profile$/, networkProfileView, 'client'],
